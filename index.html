@@ -39,28 +39,30 @@
 
     <!-- POS APPLICATION -->
     <div id="posApp" hidden>
-      <!-- NAVIGATION -->
-      <nav class="page-nav">
-        <button type="button" class="nav-btn active" data-page="checkoutPage">
-          Quick Sale
-        </button>
+      
+<!-- NAVIGATION -->
+<nav class="page-nav">
+  <button type="button" class="nav-btn active" data-page="checkoutPage">
+    Quick Sale
+  </button>
 
-        <button type="button" class="nav-btn" data-page="historyPage">
-          Sales History
-        </button>
+  <button type="button" class="nav-btn" data-page="historyPage">
+    Sales History
+  </button>
 
-        <button type="button" class="nav-btn" data-page="bestSellersPage">
-          Best Sellers
-        </button>
+  <button type="button" class="nav-btn" data-page="productsPage">
+    Products
+  </button>
 
-        <button type="button" class="nav-btn" data-page="revenuePage">
-          Revenue &amp; Profit
-        </button>
+  <button type="button" class="nav-btn" data-page="revenuePage">
+    Revenue &amp; Profit
+  </button>
 
-        <button type="button" id="signOutBtn" class="signout-btn">
-          Sign out
-        </button>
-      </nav>
+  <button type="button" id="signOutBtn" class="signout-btn">
+    Sign out
+  </button>
+</nav>
+
 
       <!-- QUICK SALE -->
       <section id="checkoutPage" class="page">
@@ -252,73 +254,148 @@
         <p id="historyMessage" class="message" role="status"></p>
       </section>
 
-      <!-- BEST SELLERS -->
-      <section id="bestSellersPage" class="page" hidden>
-        <div class="history-header">
-          <div>
-            <h2>Best-Selling Products</h2>
-            <p>Ranked using completed sales records.</p>
-          </div>
+      
+<!-- PRODUCTS PAGE -->
+<section id="productsPage" class="page" hidden>
+  <div class="history-header">
+    <div>
+      <h2>Products</h2>
+      <p>View your saved products, prices, and best sellers.</p>
+    </div>
+  </div>
 
-          <button type="button" id="refreshBestSellers" class="secondary-btn">
-            Refresh
-          </button>
-        </div>
+  <!-- PRODUCTS TABS -->
+  <div class="product-tabs">
+    <button
+      type="button"
+      class="product-tab-btn active"
+      data-product-tab="allProductsPanel"
+    >
+      All Products
+    </button>
 
-        <div class="best-seller-filters">
-          <label for="bestSellerPeriod">Sales period</label>
-          <select id="bestSellerPeriod">
-            <option value="today">Today</option>
-            <option value="week">This Week</option>
-            <option value="month">This Month</option>
-            <option value="all" selected>All Time</option>
-          </select>
-        </div>
+    <button
+      type="button"
+      class="product-tab-btn"
+      data-product-tab="bestSellersPanel"
+    >
+      Best Sellers
+    </button>
+  </div>
 
-        <div class="dashboard-stats">
-          <article class="stat-card">
-            <span>Orders</span>
-            <strong id="bestSellerOrderCount">0</strong>
-          </article>
+  <!-- ALL PRODUCTS -->
+  <div id="allProductsPanel" class="product-tab-panel">
+    <div class="history-header">
+      <div>
+        <h3>All Saved Products</h3>
+        <p>Browse your saved product names and prices.</p>
+      </div>
+    </div>
 
-          <article class="stat-card">
-            <span>Units Sold</span>
-            <strong id="bestSellerUnits">0</strong>
-          </article>
+    <div class="product-list-toolbar">
+      <input
+        type="search"
+        id="productSearch"
+        placeholder="Search products..."
+        aria-label="Search saved products"
+      />
 
-          <article class="stat-card">
-            <span>Sales Revenue</span>
-            <strong id="bestSellerRevenue">₱0.00</strong>
-          </article>
+      <button
+        type="button"
+        id="refreshProducts"
+        class="secondary-btn"
+      >
+        Refresh
+      </button>
+    </div>
 
-          <article class="stat-card">
-            <span>Estimated Profit</span>
-            <strong id="bestSellerProfit">—</strong>
-          </article>
-        </div>
+    <p id="productsCount" class="message" role="status"></p>
 
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Rank</th>
-                <th>Product</th>
-                <th>Units Sold</th>
-                <th>Revenue</th>
-                <th>Estimated Profit</th>
-              </tr>
-            </thead>
+    
+<div class="products-list-container">
+  <div class="products-grid" id="productsTable">
+    <div class="products-empty">
+      Loading your products...
+    </div>
+  </div>
+</div>
 
-            <tbody id="bestSellersTable">
-              <tr>
-                <td colspan="5">Open Best Sellers to load sales data.</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
 
-        <p id="bestSellersMessage" class="message" role="status"></p>
-      </section>
+    <p id="productsMessage" class="message" role="status"></p>
+  </div>
+
+  <!-- BEST SELLERS -->
+  <div id="bestSellersPanel" class="product-tab-panel" hidden>
+    <div class="history-header">
+      <div>
+        <h3>Best-Selling Products</h3>
+        <p>Ranked using completed sales records.</p>
+      </div>
+
+      <button
+        type="button"
+        id="refreshBestSellers"
+        class="secondary-btn"
+      >
+        Refresh
+      </button>
+    </div>
+
+    <div class="best-seller-filters">
+      <label for="bestSellerPeriod">Sales period</label>
+      <select id="bestSellerPeriod">
+        <option value="today">Today</option>
+        <option value="week">This Week</option>
+        <option value="month">This Month</option>
+        <option value="all" selected>All Time</option>
+      </select>
+    </div>
+
+    <div class="dashboard-stats">
+      <article class="stat-card">
+        <span>Orders</span>
+        <strong id="bestSellerOrderCount">0</strong>
+      </article>
+
+      <article class="stat-card">
+        <span>Units Sold</span>
+        <strong id="bestSellerUnits">0</strong>
+      </article>
+
+      <article class="stat-card">
+        <span>Sales Revenue</span>
+        <strong id="bestSellerRevenue">₱0.00</strong>
+      </article>
+
+      <article class="stat-card">
+        <span>Estimated Profit</span>
+        <strong id="bestSellerProfit">—</strong>
+      </article>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Rank</th>
+            <th>Product</th>
+            <th>Units Sold</th>
+            <th>Revenue</th>
+            <th>Estimated Profit</th>
+          </tr>
+        </thead>
+
+        <tbody id="bestSellersTable">
+          <tr>
+            <td colspan="5">Select Best Sellers to view sales data.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <p id="bestSellersMessage" class="message" role="status"></p>
+  </div>
+</section>
 
       <!-- REVENUE & PROFIT -->
 
