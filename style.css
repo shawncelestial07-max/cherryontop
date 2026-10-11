@@ -883,3 +883,57 @@ td .details-btn {
     font-size: 18px;
   }
 }
+
+
+.product-dropdown {
+  position: relative;
+  width: 100%;
+}
+
+.product-dropdown-list {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  max-height: 260px;
+  overflow-y: auto;
+  background: #fff;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
+}
+
+.product-dropdown-list[hidden] {
+  display: none;
+}
+
+.product-dropdown-option {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  border: none;
+  border-bottom: 1px solid #eee;
+  background: #fff;
+  color: #222;
+  text-align: left;
+  cursor: pointer;
+  font: inherit;
+}
+
+.product-dropdown-option:last-child {
+  border-bottom: none;
+}
+
+.product-dropdown-option:active {
+  background: #f3f4f6;
+}
+
+.product-dropdown-option small {
+  color: #6b7280;
+  font-size: 12px;
+}
+
