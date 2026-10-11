@@ -217,24 +217,76 @@ async function loadSavedProducts() {
   }
 }
 
+
 function renderProductSuggestions() {
-  const datalist = $("savedProductSuggestions");
-  datalist.replaceChildren();
+  const dropdown = $("savedProductSuggestions");
+
+  if (!dropdown) return;
+
+  dropdown.replaceChildren();
 
   savedProducts.forEach((product) => {
-    const option = document.createElement("option");
-    option.value = product.name || "";
+    if (!product.name) return;
 
-    option.label =
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "product-dropdown-option";
+
+    const name = document.createElement("span");
+    name.textContent = product.name;
+
+    const price = document.createElement("small");
+    price.textContent =
       product.lastPrice !== undefined &&
       product.lastPrice !== null &&
       product.lastPrice !== ""
         ? `Last price: ${money(product.lastPrice)}`
         : "Previously sold product";
 
-    datalist.append(option);
+    option.append(name, price);
+
+    option.addEventListener("click", () => {
+      $("saleProductName").value = product.name;
+      dropdown.hidden = true;
+
+      // Trigger existing product-name handling, if any.
+      $("saleProductName").dispatchEvent(
+        new Event("change", { bubbles: true })
+      );
+    });
+
+    dropdown.appendChild(option);
   });
 }
+
+
+const productNameInput = $("saleProductName");
+const productDropdown = $("savedProductSuggestions");
+
+if (productNameInput && productDropdown) {
+  productNameInput.addEventListener("focus", () => {
+    renderProductSuggestions();
+    productDropdown.hidden = false;
+  });
+
+  productNameInput.addEventListener("input", () => {
+    const search = productNameInput.value.trim().toLowerCase();
+
+    productDropdown.querySelectorAll(".product-dropdown-option")
+      .forEach((option) => {
+        option.hidden = !option.textContent.toLowerCase().includes(search);
+      });
+
+    productDropdown.hidden = false;
+  });
+
+  document.addEventListener("click", (event) => {
+    if (!event.target.closest(".product-dropdown")) {
+      productDropdown.hidden = true;
+    }
+  });
+}
+
 
 $("saleProductName").addEventListener("change", () => {
   const name = normalizeName($("saleProductName").value);
