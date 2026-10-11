@@ -1,0 +1,387 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sari-Sari Store POS</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <h1>Sari-Sari Store</h1>
+      <p>Point of Sale System</p>
+    </div>
+    <div class="user-info">
+      <span id="cashierLabel">Cashier</span>
+      <span id="currentDateTime"></span>
+    </div>
+  </header>
+
+  <main class="app-container">
+    <!-- LOGIN -->
+    <section id="loginPanel" class="login-panel">
+      <h2>Cashier sign in</h2>
+      <p>Sign in with your cashier account.</p>
+
+      <form id="loginForm">
+        <label for="email">Email</label>
+        <input id="email" type="email" autocomplete="username" required>
+
+        <label for="password">Password</label>
+        <input id="password" type="password" autocomplete="current-password" required>
+
+        <button class="primary-btn" type="submit">Sign in</button>
+        <p id="loginMessage" class="message" role="status"></p>
+      </form>
+    </section>
+
+    <!-- POS APPLICATION -->
+    <div id="posApp" hidden>
+      <!-- NAVIGATION -->
+      <nav class="page-nav">
+        <button type="button" class="nav-btn active" data-page="checkoutPage">
+          Quick Sale
+        </button>
+
+        <button type="button" class="nav-btn" data-page="historyPage">
+          Sales History
+        </button>
+
+        <button type="button" class="nav-btn" data-page="bestSellersPage">
+          Best Sellers
+        </button>
+
+        <button type="button" class="nav-btn" data-page="revenuePage">
+          Revenue &amp; Profit
+        </button>
+
+        <button type="button" id="signOutBtn" class="signout-btn">
+          Sign out
+        </button>
+      </nav>
+
+      <!-- QUICK SALE -->
+      <section id="checkoutPage" class="page">
+        <div class="dashboard-stats">
+          <article class="stat-card">
+            <span>Today's Sales</span>
+            <strong id="todaySales">₱0.00</strong>
+          </article>
+
+          <article class="stat-card">
+            <span>Transactions Today</span>
+            <strong id="todayCount">0</strong>
+          </article>
+        </div>
+
+        <div class="pos-container">
+          <section class="products-section">
+            <div class="section-header">
+              <h2>Quick Sale</h2>
+            </div>
+
+            <p>
+              Enter the product and selling price. Previously sold products
+              can be suggested for faster checkout.
+            </p>
+
+            <form id="quickSaleForm" class="quick-sale-form">
+              <label for="saleProductName">Product name</label>
+              <input
+                type="text"
+                id="saleProductName"
+                list="savedProductSuggestions"
+                placeholder="e.g. Coffee sachet"
+                autocomplete="off"
+                required
+              >
+              <datalist id="savedProductSuggestions"></datalist>
+
+              <label for="saleQuantity">Quantity</label>
+              <input
+                type="number"
+                id="saleQuantity"
+                min="1"
+                step="1"
+                value="1"
+                required
+              >
+
+              <label for="salePrice">Selling price per item (₱)</label>
+              <input
+                type="number"
+                id="salePrice"
+                min="0"
+                step="0.01"
+                placeholder="0.00"
+                required
+              >
+
+              <button type="submit" class="primary-btn">
+                Add to Order
+              </button>
+            </form>
+
+            <p id="productSuggestionMessage" class="message" role="status"></p>
+
+            <div class="section-header">
+              <h2>Current Order</h2>
+              <button type="button" id="clearCart" class="clear-btn">
+                Clear
+              </button>
+            </div>
+
+            <div class="cart-items" id="cartItems">
+              <div class="empty-cart">
+                <div>🛒</div>
+                <p>No items in order</p>
+                <small>Add a product to begin a sale.</small>
+              </div>
+            </div>
+          </section>
+
+          <!-- PAYMENT -->
+          <aside class="cart-section">
+            <div class="cart-header">
+              <h2>Payment</h2>
+            </div>
+
+            <div class="order-summary">
+              <div class="summary-row">
+                <span>Subtotal</span>
+                <strong id="subtotal">₱0.00</strong>
+              </div>
+
+              <div class="summary-row">
+                <span>Discount</span>
+                <strong id="discount">₱0.00</strong>
+              </div>
+
+              <div class="summary-row total-row">
+                <span>Total</span>
+                <strong id="total">₱0.00</strong>
+              </div>
+
+              <div class="cash-section">
+                <label for="cashReceived">Cash received (₱)</label>
+                <input
+                  type="number"
+                  id="cashReceived"
+                  min="0"
+                  step="0.01"
+                  placeholder="0.00"
+                >
+              </div>
+
+              <div class="change-row">
+                <span>Change</span>
+                <strong id="change">₱0.00</strong>
+              </div>
+
+              <button type="button" class="checkout-btn" id="checkoutBtn">
+                COMPLETE SALE
+              </button>
+
+              <p id="checkoutMessage" class="message" role="status"></p>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- SALES HISTORY -->
+      <section id="historyPage" class="page" hidden>
+        <div class="history-header">
+          <div>
+            <h2>Sales History</h2>
+            <p>Completed transactions saved in Firestore.</p>
+          </div>
+
+          <button type="button" id="refreshHistory" class="secondary-btn">
+            Refresh
+          </button>
+        </div>
+
+        <div class="dashboard-stats">
+          <article class="stat-card">
+            <span>Sales Loaded</span>
+            <strong id="historySales">₱0.00</strong>
+          </article>
+
+          <article class="stat-card">
+            <span>Orders Loaded</span>
+            <strong id="historyCount">0</strong>
+          </article>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Order ID</th>
+                <th>Date &amp; time</th>
+                <th>Products Sold</th>
+                <th>Items</th>
+                <th>Total</th>
+                <th>Cash</th>
+                <th>Change</th>
+                <th>Cashier</th>
+              </tr>
+            </thead>
+
+            <tbody id="ordersTable">
+              <tr>
+                <td colspan="8">Sign in to load order history.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p id="historyMessage" class="message" role="status"></p>
+      </section>
+
+      <!-- BEST SELLERS -->
+      <section id="bestSellersPage" class="page" hidden>
+        <div class="history-header">
+          <div>
+            <h2>Best-Selling Products</h2>
+            <p>Ranked using completed sales records.</p>
+          </div>
+
+          <button type="button" id="refreshBestSellers" class="secondary-btn">
+            Refresh
+          </button>
+        </div>
+
+        <div class="best-seller-filters">
+          <label for="bestSellerPeriod">Sales period</label>
+          <select id="bestSellerPeriod">
+            <option value="today">Today</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+            <option value="all" selected>All Time</option>
+          </select>
+        </div>
+
+        <div class="dashboard-stats">
+          <article class="stat-card">
+            <span>Orders</span>
+            <strong id="bestSellerOrderCount">0</strong>
+          </article>
+
+          <article class="stat-card">
+            <span>Units Sold</span>
+            <strong id="bestSellerUnits">0</strong>
+          </article>
+
+          <article class="stat-card">
+            <span>Sales Revenue</span>
+            <strong id="bestSellerRevenue">₱0.00</strong>
+          </article>
+
+          <article class="stat-card">
+            <span>Estimated Profit</span>
+            <strong id="bestSellerProfit">—</strong>
+          </article>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Rank</th>
+                <th>Product</th>
+                <th>Units Sold</th>
+                <th>Revenue</th>
+                <th>Estimated Profit</th>
+              </tr>
+            </thead>
+
+            <tbody id="bestSellersTable">
+              <tr>
+                <td colspan="5">Open Best Sellers to load sales data.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p id="bestSellersMessage" class="message" role="status"></p>
+      </section>
+
+      <!-- REVENUE & PROFIT -->
+      <section id="revenuePage" class="page" hidden>
+        <div class="history-header">
+          <div>
+            <h2>Revenue &amp; Profit</h2>
+            <p>
+              Track sales revenue, imported supplier costs, and estimated
+              gross profit.
+            </p>
+          </div>
+
+          <button type="button" id="refreshRevenue" class="secondary-btn">
+            Refresh
+          </button>
+        </div>
+
+        <div class="best-seller-filters">
+          <label for="revenuePeriod">Report period</label>
+          <select id="revenuePeriod">
+            <option value="today">Today</option>
+            <option value="week">This Week</option>
+            <option value="month">This Month</option>
+            <option value="all" selected>All Time</option>
+          </select>
+        </div>
+
+        <div class="dashboard-stats">
+          <article class="stat-card">
+            <span>Total Revenue</span>
+            <strong id="revenueTotal">₱0.00</strong>
+          </article>
+
+          <article class="stat-card">
+            <span>Estimated Product Costs</span>
+            <strong id="revenueCost">₱0.00</strong>
+          </article>
+
+          <article class="stat-card">
+            <span>Estimated Gross Profit</span>
+            <strong id="revenueProfit">—</strong>
+          </article>
+
+          <article class="stat-card">
+            <span>Completed Transactions</span>
+            <strong id="revenueOrderCount">0</strong>
+          </article>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Product</th>
+                <th>Units Sold</th>
+                <th>Revenue</th>
+                <th>Supplier Cost</th>
+                <th>Estimated Profit</th>
+              </tr>
+            </thead>
+
+            <tbody id="revenueTable">
+              <tr>
+                <td colspan="5">Open this section to load your report.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p id="revenueMessage" class="message" role="status"></p>
+      </section>
+    </div>
+  </main>
+
+  <script type="module" src="script.js"></script>
+</body>
+</html>
