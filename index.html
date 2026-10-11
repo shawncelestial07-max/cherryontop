@@ -89,16 +89,25 @@
 
             <form id="quickSaleForm" class="quick-sale-form">
               
+
 <label for="saleProductName">Product Name</label>
-<input
-  type="text"
-  id="saleProductName"
-  list="savedProductSuggestions"
-  placeholder="Select or type a product name..."
-  autocomplete="off"
-  required
-/>
-<datalist id="savedProductSuggestions"></datalist>
+
+<div class="product-dropdown">
+  <input
+    type="text"
+    id="saleProductName"
+    placeholder="Tap to select a product..."
+    autocomplete="off"
+    required
+  />
+
+  <div
+    id="savedProductSuggestions"
+    class="product-dropdown-list"
+    hidden
+  ></div>
+</div>
+
 
 
               <label for="saleQuantity">Quantity</label>
