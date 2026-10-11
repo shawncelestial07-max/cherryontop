@@ -18,6 +18,9 @@ import {
   signOut
 } from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
 
+
+import Chart from "https://cdn.jsdelivr.net/npm/chart.js/auto/+esm";
+
 // --------------------------------------------------
 // HELPERS AND STATE
 // --------------------------------------------------
@@ -975,6 +978,101 @@ async function loadBestSellers() {
   }
 }
 
+
+/* SALES OVERVIEW GRAPH */
+
+let salesOverviewChart = null;
+
+function renderSalesOverviewChart(dailySales) {
+  const canvas = $("salesOverviewChart");
+  const message = $("salesChartMessage");
+
+  if (!canvas) {
+    console.warn("Sales Overview canvas was not found.");
+    return;
+  }
+
+  const entries = [...dailySales.entries()]
+    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
+
+  if (salesOverviewChart) {
+    salesOverviewChart.destroy();
+    salesOverviewChart = null;
+  }
+
+  if (!entries.length) {
+    if (message) {
+      message.textContent = "No sales data available for this period.";
+    }
+    return;
+  }
+
+  if (message) {
+    message.textContent = "";
+  }
+
+  salesOverviewChart = new Chart(canvas, {
+    type: "line",
+    data: {
+      labels: entries.map(([date]) => {
+        const [year, month, day] = date.split("-").map(Number);
+
+        return new Date(year, month - 1, day)
+          .toLocaleDateString("en-PH", {
+            month: "short",
+            day: "numeric"
+          });
+      }),
+      datasets: [{
+        label: "Daily Sales",
+        data: entries.map(([, amount]) => amount),
+        borderColor: "#16a34a",
+        backgroundColor: "rgba(22, 163, 74, 0.12)",
+        borderWidth: 3,
+        fill: true,
+        tension: 0.3,
+        pointRadius: 4,
+        pointHoverRadius: 6,
+        pointBackgroundColor: "#166534"
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        intersect: false,
+        mode: "index"
+      },
+      plugins: {
+        legend: {
+          display: false
+        },
+        tooltip: {
+          callbacks: {
+            label: (context) => `Sales: ${money(context.parsed.y)}`
+          }
+        }
+      },
+      scales: {
+        y: {
+          beginAtZero: true,
+          ticks: {
+            callback: (value) =>
+              "₱" + Number(value).toLocaleString("en-PH")
+          }
+        },
+        x: {
+          ticks: {
+            maxRotation: 45,
+            autoSkip: true
+          }
+        }
+      }
+    }
+  });
+}
+
+
 // --------------------------------------------------
 // REVENUE & PROFIT
 // --------------------------------------------------
@@ -996,12 +1094,13 @@ async function loadRevenue() {
     const start = getPeriodStart($("revenuePeriod").value, now);
 
     let revenue = 0;
-    let cost = 0;
-    let profit = 0;
-    let orderCount = 0;
-    let unknownCosts = false;
+let cost = 0;
+let profit = 0;
+let orderCount = 0;
+let unknownCosts = false;
 
-    const products = new Map();
+const products = new Map();
+const dailySales = new Map();
 
     snapshot.docs.forEach((orderDoc) => {
       const order = orderDoc.data();
@@ -1015,7 +1114,22 @@ async function loadRevenue() {
       if (!items.length) return;
 
       orderCount++;
-      revenue += Number(order.total) || 0;
+      orderCount++;
+
+const orderTotal = Number(order.total) || 0;
+revenue += orderTotal;
+
+// Group completed sales by local calendar date.
+const dateKey = [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, "0"),
+  String(date.getDate()).padStart(2, "0")
+].join("-");
+
+dailySales.set(
+  dateKey,
+  (dailySales.get(dateKey) || 0) + orderTotal
+);
 
       items.forEach((item) => {
         const name = String(item.name || "Unnamed product").trim();
@@ -1081,6 +1195,8 @@ async function loadRevenue() {
       unknownCosts ? "Incomplete" : money(profit);
 
     $("revenueOrderCount").textContent = String(orderCount);
+
+    renderSalesOverviewChart(dailySales);
 
     const ranked = [...products.values()].sort(
       (a, b) => b.revenue - a.revenue
