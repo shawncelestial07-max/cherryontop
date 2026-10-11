@@ -208,14 +208,24 @@ async function loadSavedProducts() {
     }));
 
     renderProductSuggestions();
+    renderProductsTable();
 
     $("productSuggestionMessage").textContent =
       `${savedProducts.length} saved product(s) available.`;
+ 
   } catch (error) {
+    console.error("Could not load saved products:", error);
+
+    savedProducts = [];
+
+    renderProductSuggestions();
+    renderProductsTable();
+
     $("productSuggestionMessage").textContent =
       `Could not load saved products: ${readableError(error)}`;
   }
 }
+
 
 
 function renderProductSuggestions() {
@@ -280,11 +290,18 @@ if (productNameInput && productDropdown) {
     productDropdown.hidden = false;
   });
 
-  document.addEventListener("click", (event) => {
-    if (!event.target.closest(".product-dropdown")) {
-      productDropdown.hidden = true;
-    }
-  });
+
+document.addEventListener("click", (event) => {
+  if (
+    !event.target.closest(".product-dropdown") &&
+    !event.target.closest("#saleProductName") &&
+    !event.target.closest(".product-search-wrapper") &&
+    !event.target.closest(".product-input-wrapper")
+  ) {
+    productDropdown.hidden = true;
+  }
+});
+
 }
 
 
@@ -692,6 +709,7 @@ $("checkoutBtn").addEventListener("click", async () => {
 // NAVIGATION
 // --------------------------------------------------
 
+
 document.querySelectorAll(".nav-btn").forEach((button) => {
   button.addEventListener("click", async () => {
     document.querySelectorAll(".nav-btn").forEach((nav) => {
@@ -706,8 +724,8 @@ document.querySelectorAll(".nav-btn").forEach((button) => {
       await loadHistory();
     }
 
-    if (button.dataset.page === "bestSellersPage") {
-      await loadBestSellers();
+    if (button.dataset.page === "productsPage") {
+      await loadSavedProducts();
     }
 
     if (button.dataset.page === "revenuePage") {
@@ -715,6 +733,7 @@ document.querySelectorAll(".nav-btn").forEach((button) => {
     }
   });
 });
+
 
 // --------------------------------------------------
 // DATE HELPERS
@@ -1031,6 +1050,150 @@ async function loadBestSellers() {
 }
 
 
+/* --------------------------------------------------
+   PRODUCTS PAGE TABS
+-------------------------------------------------- */
+
+document.querySelectorAll(".product-tab-btn").forEach((button) => {
+  button.addEventListener("click", () => {
+    const targetId = button.dataset.productTab;
+
+    document.querySelectorAll(".product-tab-btn").forEach((tab) => {
+      tab.classList.toggle("active", tab === button);
+    });
+
+    document.querySelectorAll(".product-tab-panel").forEach((panel) => {
+      panel.hidden = panel.id !== targetId;
+    });
+
+    // Load the Best Sellers report when its tab is opened.
+    if (targetId === "bestSellersPanel") {
+      loadBestSellers();
+    }
+
+    // Refresh saved products when All Products is opened.
+    if (targetId === "allProductsPanel") {
+      loadSavedProducts();
+    }
+  });
+});
+
+
+/* --------------------------------------------------
+   ALL PRODUCTS LIST
+-------------------------------------------------- */
+
+
+function renderProductsTable() {
+  const container = $("productsTable");
+  const searchInput = $("productSearch");
+  const message = $("productsMessage");
+  const count = $("productsCount");
+
+  if (!container) return;
+
+  const search = (searchInput?.value || "").trim().toLowerCase();
+
+  const filteredProducts = savedProducts
+    .filter((product) =>
+      String(product.name || "").toLowerCase().includes(search)
+    )
+    .sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""))
+    );
+
+  container.replaceChildren();
+
+  if (count) {
+    count.textContent = `${filteredProducts.length} product(s)`;
+  }
+
+  if (filteredProducts.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "products-empty";
+    empty.textContent = search
+      ? "No products match your search."
+      : "No saved products found.";
+
+    container.appendChild(empty);
+
+    if (message) message.textContent = "";
+    return;
+  }
+
+  filteredProducts.forEach((product, index) => {
+    const card = document.createElement("article");
+    card.className = "saved-product-card";
+
+    const top = document.createElement("div");
+    top.className = "product-card-top";
+
+    const icon = document.createElement("div");
+    icon.className = "product-card-icon";
+    icon.textContent = "▦";
+    icon.setAttribute("aria-hidden", "true");
+
+    const info = document.createElement("div");
+    info.className = "product-card-info";
+
+    const name = document.createElement("h3");
+    name.className = "product-card-name";
+    name.textContent = product.name || "Unnamed product";
+
+    const label = document.createElement("span");
+    label.className = "product-card-label";
+    label.textContent = "Saved product";
+
+    info.append(name, label);
+    top.append(icon, info);
+
+    const bottom = document.createElement("div");
+    bottom.className = "product-card-bottom";
+
+    const priceInfo = document.createElement("div");
+
+    const priceLabel = document.createElement("span");
+    priceLabel.className = "product-price-label";
+    priceLabel.textContent = "Last sold price";
+
+    const priceText = document.createElement("div");
+    priceText.className = "product-card-price";
+
+    const price = Number(product.lastPrice);
+
+    priceText.textContent =
+      product.lastPrice !== undefined &&
+      product.lastPrice !== null &&
+      product.lastPrice !== "" &&
+      Number.isFinite(price)
+        ? money(price)
+        : "No price saved";
+
+    priceInfo.append(priceLabel, priceText);
+
+    const number = document.createElement("span");
+    number.className = "product-card-number";
+    number.textContent = `#${index + 1}`;
+
+    bottom.append(priceInfo, number);
+    card.append(top, bottom);
+    container.appendChild(card);
+  });
+
+  if (message) message.textContent = "";
+}
+
+
+
+// Search products as the user types.
+$("productSearch").addEventListener("input", renderProductsTable);
+
+
+// Refresh saved products from Firebase.
+$("refreshProducts").addEventListener("click", loadSavedProducts);
+
+
+
 /* SALES OVERVIEW GRAPH */
 
 let salesOverviewChart = null;
@@ -1165,7 +1328,6 @@ const dailySales = new Map();
       const items = Array.isArray(order.items) ? order.items : [];
       if (!items.length) return;
 
-      orderCount++;
       orderCount++;
 
 const orderTotal = Number(order.total) || 0;
