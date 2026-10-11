@@ -794,6 +794,22 @@ async function loadHistory() {
       query(ordersRef, orderBy("createdAt", "desc"), limit(200))
     );
 
+    
+const allOrdersSnapshot = await getDocs(ordersRef);
+
+
+let allTimeCashReceived = 0;
+
+allOrdersSnapshot.docs.forEach((orderDoc) => {
+  const order = orderDoc.data();
+
+  if (order.status && order.status !== "completed") return;
+
+  allTimeCashReceived += Number(order.total) || 0;
+});
+
+
+
     let totalSales = 0;
     let completedOrderCount = 0;
 
@@ -854,6 +870,7 @@ async function loadHistory() {
 
     $("historySales").textContent = money(totalSales);
     $("historyCount").textContent = String(completedOrderCount);
+    $("historyCashReceived").textContent = money(allTimeCashReceived);
 
     $("historyMessage").textContent =
       snapshot.size === 200
@@ -1227,63 +1244,83 @@ function renderSalesOverviewChart(dailySales) {
   }
 
   salesOverviewChart = new Chart(canvas, {
-    type: "line",
+    type: "bar",
     data: {
       labels: entries.map(([date]) => {
         const [year, month, day] = date.split("-").map(Number);
 
-        return new Date(year, month - 1, day)
-          .toLocaleDateString("en-PH", {
-            month: "short",
-            day: "numeric"
-          });
+        return new Date(year, month - 1, day).toLocaleDateString("en-PH", {
+          month: "short",
+          day: "numeric"
+        });
       }),
+
       datasets: [{
         label: "Daily Sales",
-        data: entries.map(([, amount]) => amount),
-        borderColor: "#16a34a",
-        backgroundColor: "rgba(22, 163, 74, 0.12)",
-        borderWidth: 3,
-        fill: true,
-        tension: 0.3,
-        pointRadius: 4,
-        pointHoverRadius: 6,
-        pointBackgroundColor: "#166534"
+        data: entries.map(([, total]) => total),
+        backgroundColor: "#22a06b",
+        hoverBackgroundColor: "#16794b",
+        borderRadius: 6,
+        borderSkipped: false,
+        maxBarThickness: 38,
+        categoryPercentage: 0.75,
+        barPercentage: 0.85
       }]
     },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      interaction: {
-        intersect: false,
-        mode: "index"
-      },
-      plugins: {
-        legend: {
-          display: false
-        },
-        tooltip: {
-          callbacks: {
-            label: (context) => `Sales: ${money(context.parsed.y)}`
-          }
-        }
-      },
-      scales: {
-        y: {
-          beginAtZero: true,
-          ticks: {
-            callback: (value) =>
-              "₱" + Number(value).toLocaleString("en-PH")
-          }
-        },
-        x: {
-          ticks: {
-            maxRotation: 45,
-            autoSkip: true
-          }
-        }
+
+    
+options: {
+  responsive: true,
+  maintainAspectRatio: false,
+
+  plugins: {
+    legend: {
+      display: false
+    },
+    tooltip: {
+      backgroundColor: "#172b4d",
+      titleColor: "#ffffff",
+      bodyColor: "#ffffff",
+      padding: 12,
+      cornerRadius: 8,
+      displayColors: false,
+      callbacks: {
+        title: (items) => `Date: ${items[0].label}`,
+        label: (context) => `Sales: ${money(context.parsed.y)}`
       }
     }
+  },
+
+  scales: {
+    y: {
+      beginAtZero: true,
+      grace: "10%",
+      border: {
+        display: false
+      },
+      grid: {
+        color: "#edf0f4"
+      },
+      ticks: {
+        callback: (value) =>
+          "₱" + Number(value).toLocaleString("en-PH")
+      }
+    },
+
+    x: {
+      grid: {
+        display: false
+      },
+      ticks: {
+        autoSkip: false,
+        maxRotation: 45,
+        minRotation: 0,
+        color: "#475569"
+      }
+    }
+  }
+}
+
   });
 }
 
