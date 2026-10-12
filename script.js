@@ -1,1282 +1,1495 @@
 
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
+import { db, auth } from "./firebase.js";
+
+import {
+  collection,
+  getDocs,
+  doc,
+  runTransaction,
+  query,
+  orderBy,
+  limit,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/12.9.0/firebase-firestore.js";
 
-:root {
-  font-family: Arial, Helvetica, sans-serif;
-  color: #1f2937;
-  background: #f3f4f6;
-}
+import {
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut
+} from "https://www.gstatic.com/firebasejs/12.9.0/firebase-auth.js";
 
-html {
-  -webkit-text-size-adjust: 100%;
-  scroll-behavior: smooth;
-}
 
-body {
-  min-height: 100vh;
-  min-width: 320px;
-}
+import Chart from "https://cdn.jsdelivr.net/npm/chart.js/auto/+esm";
+
+// --------------------------------------------------
+// HELPERS AND STATE
+// --------------------------------------------------
+
+const $ = (id) => document.getElementById(id);
 
-[hidden] {
-  display: none !important;
-}
+const money = (value) =>
+  new Intl.NumberFormat("en-PH", {
+    style: "currency",
+    currency: "PHP"
+  }).format(Number(value) || 0);
 
-button,
-input {
-  font: inherit;
-}
+const normalizeName = (name) =>
+  String(name || "").trim().toLocaleLowerCase();
 
-button {
-  touch-action: manipulation;
-}
+let cart = [];
+let savedProducts = [];
+let importedProducts = [];
+let isCheckingOut = false;
 
-.topbar {
-  min-height: 80px;
-  background: #166534;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14px 30px;
-  gap: 18px;
+const importedProductsRef = collection(db, "products");
+const ordersRef = collection(db, "orders");
+const savedProductsRef = collection(db, "savedProducts");
+
+// --------------------------------------------------
+// CLOCK
+// --------------------------------------------------
+
+function updateClock() {
+  $("currentDateTime").textContent = new Date().toLocaleString(
+    "en-PH",
+    { dateStyle: "medium", timeStyle: "short" }
+  );
+}
+
+updateClock();
+setInterval(updateClock, 30000);
+
+// --------------------------------------------------
+// ERROR MESSAGES
+// --------------------------------------------------
+
+function readableError(error) {
+  console.error(error);
+
+  const map = {
+    "auth/invalid-credential": "Email or password is incorrect.",
+    "auth/invalid-email": "Enter a valid email address.",
+    "auth/too-many-requests": "Too many attempts. Try again later.",
+    "permission-denied": "Permission denied. Check your Firestore security rules.",
+    "failed-precondition": "A required Firestore index or database setup may be missing."
+  };
+
+  return map[error.code] || error.message || "Something went wrong.";
 }
 
-.topbar h1 {
-  font-size: 24px;
-  margin-bottom: 4px;
-  overflow-wrap: anywhere;
-}
+// --------------------------------------------------
+// AUTHENTICATION
+// --------------------------------------------------
 
-.topbar p {
-  font-size: 13px;
-  opacity: 0.8;
-}
+$("loginForm").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  $("loginMessage").textContent = "Signing in...";
 
-.user-info {
-  display: flex;
-  gap: 24px;
-  font-size: 14px;
-  align-items: center;
-  overflow-wrap: anywhere;
-}
+  try {
+    await signInWithEmailAndPassword(
+      auth,
+      $("email").value.trim(),
+      $("password").value
+    );
 
-.app-container {
-  max-width: 1600px;
-  width: 100%;
-  margin: auto;
-  padding: 20px;
-}
+    $("loginMessage").textContent = "";
+  } catch (error) {
+    $("loginMessage").textContent = readableError(error);
+  }
+});
 
-.login-panel {
-  background: #fff;
-  width: 100%;
-  max-width: 430px;
-  margin: 60px auto;
-  padding: 28px;
-  border-radius: 12px;
-  box-shadow: 0 2px 12px #0000000d;
-}
+$("signOutBtn").addEventListener("click", async () => {
+  try {
+    await signOut(auth);
+  } catch (error) {
+    alert(readableError(error));
+  }
+});
 
-.login-panel h2 {
-  margin-bottom: 8px;
-}
+onAuthStateChanged(auth, async (user) => {
+  $("loginPanel").hidden = !!user;
+  $("posApp").hidden = !user;
 
-.login-panel > p {
-  color: #6b7280;
-  line-height: 1.5;
-  margin-bottom: 20px;
-}
+  if (!user) {
+    cart = [];
+    savedProducts = [];
+    importedProducts = [];
 
-label {
-  display: block;
-  font-size: 13px;
-  font-weight: bold;
-  margin: 14px 0 6px;
-}
+    renderCart();
 
-input {
-  width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  padding: 11px 13px;
-  border: 1px solid #d1d5db;
-  border-radius: 7px;
-  background: #fff;
-}
+    $("cashierLabel").textContent = "Cashier";
+    $("saleProductName").value = "";
+    $("saleQuantity").value = "1";
+    $("salePrice").value = "";
+    $("cashReceived").value = "";
 
-input:focus {
-  outline: 2px solid #bbf7d0;
-  border-color: #16a34a;
-}
+    return;
+  }
 
-.primary-btn,
-.checkout-btn {
-  border: 0;
-  background: #16a34a;
-  color: #fff;
-  padding: 12px 16px;
-  min-height: 44px;
-  border-radius: 7px;
-  font-weight: bold;
-  cursor: pointer;
-}
+  $("cashierLabel").textContent =
+    `Cashier: ${user.email || user.uid}`;
 
-.primary-btn {
-  width: 100%;
-  margin-top: 18px;
-}
+    await Promise.all([
+    loadImportedProducts(),
+    loadSavedProducts(),
+    loadDailySummary()
+  ]);
+  });
 
-.primary-btn:hover,
-.checkout-btn:hover {
-  background: #15803d;
-}
+// --------------------------------------------------
+// SUPPLIER COST AND IMPORTED PRODUCTS
+// --------------------------------------------------
 
-.page-nav {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-bottom: 18px;
-  background: #fff;
-  border-radius: 10px;
-  padding: 10px;
-}
+function getSupplierCost(product) {
+  const fields = [
+    "cost",
+    "supplierCost",
+    "supplierPrice",
+    "purchasePrice",
+    "buyingPrice",
+    "wholesalePrice"
+  ];
 
-.nav-btn,
-.signout-btn,
-.secondary-btn,
-.clear-btn {
-  border: 0;
-  border-radius: 7px;
-  padding: 11px 14px;
-  min-height: 44px;
-  cursor: pointer;
-  font-weight: 600;
-}
+  for (const field of fields) {
+    const value = product?.[field];
 
-.nav-btn {
-  background: #f3f4f6;
-}
+    if (
+      value !== null &&
+      value !== undefined &&
+      value !== "" &&
+      Number.isFinite(Number(value)) &&
+      Number(value) >= 0
+    ) {
+      return Number(value);
+    }
+  }
 
-.nav-btn.active {
-  background: #166534;
-  color: #fff;
+  return null;
 }
 
-.signout-btn {
-  margin-left: auto;
-  background: #fee2e2;
-  color: #b91c1c;
-}
+function findImportedProduct(name) {
+  const normalized = normalizeName(name);
 
-.dashboard-stats {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14px;
-  margin-bottom: 18px;
+  return importedProducts.find(
+    (product) => normalizeName(product.name) === normalized
+  ) || null;
 }
 
-.stat-card {
-  min-width: 0;
-  background: #fff;
-  padding: 18px;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px #00000008;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
+async function loadImportedProducts() {
+  try {
+    const snapshot = await getDocs(importedProductsRef);
 
-.stat-card span {
-  color: #6b7280;
-  font-size: 13px;
-}
+    importedProducts = snapshot.docs.map((productDoc) => ({
+      id: productDoc.id,
+      ...productDoc.data()
+    }));
 
-.stat-card strong {
-  font-size: 23px;
-  color: #166534;
-  overflow-wrap: anywhere;
+    console.log(`Loaded ${importedProducts.length} imported products.`);
+  } catch (error) {
+    console.error("Could not load imported products:", error);
+    importedProducts = [];
+  }
 }
 
-.pos-container {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) 380px;
-  align-items: start;
-  gap: 20px;
-}
+// --------------------------------------------------
+// SAVED PRODUCTS AND SUGGESTIONS
+// --------------------------------------------------
 
-.products-section,
-.cart-section {
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px #00000008;
-  min-width: 0;
-}
+async function loadSavedProducts() {
+  $("productSuggestionMessage").textContent = "Loading saved products...";
 
-.products-section {
-  padding: 20px;
-}
+  try {
+    const snapshot = await getDocs(savedProductsRef);
 
-.section-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 20px;
-}
+    savedProducts = snapshot.docs.map((productDoc) => ({
+      id: productDoc.id,
+      ...productDoc.data()
+    }));
 
-.section-header h2,
-.cart-header h2 {
-  font-size: 22px;
-}
+    renderProductSuggestions();
+    renderProductsTable();
 
-#searchProduct {
-  max-width: 280px;
-}
+    $("productSuggestionMessage").textContent =
+      `${savedProducts.length} saved product(s) available.`;
+ 
+  } catch (error) {
+    console.error("Could not load saved products:", error);
 
-.categories {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 20px;
-  overflow-x: auto;
-  padding-bottom: 6px;
-  -webkit-overflow-scrolling: touch;
-}
+    savedProducts = [];
 
-.category-btn {
-  flex: 0 0 auto;
-  min-height: 42px;
-  border: 0;
-  background: #f3f4f6;
-  padding: 9px 15px;
-  border-radius: 20px;
-  cursor: pointer;
-  white-space: nowrap;
-}
+    renderProductSuggestions();
+    renderProductsTable();
 
-.category-btn:hover {
-  background: #dcfce7;
+    $("productSuggestionMessage").textContent =
+      `Could not load saved products: ${readableError(error)}`;
+  }
 }
 
-.category-btn.active {
-  background: #16a34a;
-  color: #fff;
-}
 
-.product-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(165px, 1fr));
-  gap: 15px;
-}
 
-.product-card {
-  min-width: 0;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 15px;
-  text-align: center;
-  transition: border-color 0.2s, box-shadow 0.2s;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
+function renderProductSuggestions() {
+  const dropdown = $("savedProductSuggestions");
 
-.product-card:hover {
-  border-color: #16a34a;
-  box-shadow: 0 4px 12px #00000012;
-}
+  if (!dropdown) return;
 
-.product-icon {
-  font-size: 38px;
-}
+  dropdown.replaceChildren();
 
-.product-card h3 {
-  font-size: 15px;
-  overflow-wrap: anywhere;
-}
+  savedProducts.forEach((product) => {
+    if (!product.name) return;
 
-.product-meta {
-  font-size: 12px;
-  color: #6b7280;
-}
+    const option = document.createElement("button");
+    option.type = "button";
+    option.className = "product-dropdown-option";
 
-.product-price {
-  color: #166534;
-  font-weight: bold;
-  overflow-wrap: anywhere;
-}
+    const name = document.createElement("span");
+    name.textContent = product.name;
 
-.add-btn {
-  width: 100%;
-  min-height: 44px;
-  border: 0;
-  background: #16a34a;
-  color: #fff;
-  padding: 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-weight: bold;
-  margin-top: auto;
-}
+    const price = document.createElement("small");
+    price.textContent =
+      product.lastPrice !== undefined &&
+      product.lastPrice !== null &&
+      product.lastPrice !== ""
+        ? `Last price: ${money(product.lastPrice)}`
+        : "Previously sold product";
 
-.add-btn:disabled {
-  background: #9ca3af;
-  cursor: not-allowed;
-}
+    option.append(name, price);
 
-.cart-section {
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
+    option.addEventListener("click", () => {
+      $("saleProductName").value = product.name;
+      dropdown.hidden = true;
 
-.cart-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  padding: 20px;
-  border-bottom: 1px solid #e5e7eb;
-}
+      // Trigger existing product-name handling, if any.
+      $("saleProductName").dispatchEvent(
+        new Event("change", { bubbles: true })
+      );
+    });
 
-.clear-btn {
-  background: #fee2e2;
-  color: #dc2626;
+    dropdown.appendChild(option);
+  });
 }
 
-.cart-items {
-  padding: 15px;
-  overflow-y: auto;
-  min-height: 190px;
-  max-height: 440px;
-  -webkit-overflow-scrolling: touch;
-}
 
-.empty-cart {
-  text-align: center;
-  color: #9ca3af;
-  padding-top: 40px;
-}
+const productNameInput = $("saleProductName");
+const productDropdown = $("savedProductSuggestions");
 
-.empty-cart div {
-  font-size: 40px;
-  margin-bottom: 10px;
-}
+if (productNameInput && productDropdown) {
+  productNameInput.addEventListener("focus", () => {
+    renderProductSuggestions();
+    productDropdown.hidden = false;
+  });
 
-.empty-cart p {
-  font-weight: bold;
-  margin-bottom: 5px;
-}
+  productNameInput.addEventListener("input", () => {
+    const search = productNameInput.value.trim().toLowerCase();
 
-.cart-item {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 10px;
-  padding: 12px 0;
-  border-bottom: 1px solid #f0f0f0;
-}
+    productDropdown.querySelectorAll(".product-dropdown-option")
+      .forEach((option) => {
+        option.hidden = !option.textContent.toLowerCase().includes(search);
+      });
 
-.cart-item-name {
-  font-weight: bold;
-  font-size: 14px;
-  overflow-wrap: anywhere;
-}
+    productDropdown.hidden = false;
+  });
 
-.cart-item-price {
-  font-size: 13px;
-  color: #6b7280;
-  margin-top: 4px;
-}
 
-.cart-item-controls {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
-  margin-top: 8px;
-}
+document.addEventListener("click", (event) => {
+  if (
+    !event.target.closest(".product-dropdown") &&
+    !event.target.closest("#saleProductName") &&
+    !event.target.closest(".product-search-wrapper") &&
+    !event.target.closest(".product-input-wrapper")
+  ) {
+    productDropdown.hidden = true;
+  }
+});
 
-.qty-btn {
-  width: 36px;
-  height: 36px;
-  border: 0;
-  background: #e5e7eb;
-  border-radius: 6px;
-  cursor: pointer;
 }
 
-.qty {
-  min-width: 20px;
-  text-align: center;
-}
 
-.remove-btn {
-  color: #dc2626;
-  background: none;
-  border: 0;
-  cursor: pointer;
-  font-size: 12px;
-  padding: 8px;
-}
+$("saleProductName").addEventListener("change", () => {
+  const name = normalizeName($("saleProductName").value);
 
-.cart-item-total {
-  font-weight: bold;
-  white-space: nowrap;
-}
+  const product = savedProducts.find(
+    (item) => normalizeName(item.name) === name
+  );
 
-.order-summary {
-  border-top: 1px solid #e5e7eb;
-  padding: 20px;
-  background: #fafafa;
-}
+  if (
+    product &&
+    product.lastPrice !== undefined &&
+    product.lastPrice !== null &&
+    product.lastPrice !== "" &&
+    Number.isFinite(Number(product.lastPrice))
+  ) {
+    $("salePrice").value = Number(product.lastPrice).toFixed(2);
 
-.summary-row {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 12px;
-  color: #6b7280;
-}
+    $("productSuggestionMessage").textContent =
+      `Last recorded price: ${money(product.lastPrice)}. You can change it.`;
+  }
+});
 
-.summary-row span:last-child {
-  text-align: right;
-  overflow-wrap: anywhere;
-}
+// --------------------------------------------------
+// ADD ITEMS TO CURRENT ORDER
+// --------------------------------------------------
 
-.total-row {
-  font-size: 20px;
-  color: #111827;
-  border-top: 1px solid #ddd;
-  padding-top: 15px;
-  margin-top: 10px;
-}
+$("quickSaleForm").addEventListener("submit", (event) => {
+  event.preventDefault();
 
-.cash-section {
-  margin-top: 15px;
-}
+  const name = $("saleProductName").value.trim();
+  const quantity = Number($("saleQuantity").value);
+  const priceInput = $("salePrice").value.trim();
+  const price = Number(priceInput);
 
-.cash-section label {
-  margin-top: 0;
-}
+  if (!name) {
+    $("productSuggestionMessage").textContent = "Enter a product name.";
+    return;
+  }
 
-#cashReceived {
-  font-size: 18px;
-}
+  if (!Number.isSafeInteger(quantity) || quantity < 1) {
+    $("productSuggestionMessage").textContent =
+      "Quantity must be a whole number greater than zero.";
+    return;
+  }
 
-.change-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 10px;
-  margin: 15px 0;
-  padding: 12px;
-  background: #dcfce7;
-  border-radius: 6px;
-  color: #166534;
-}
+  if (
+    priceInput === "" ||
+    !Number.isFinite(price) ||
+    price < 0
+  ) {
+    $("productSuggestionMessage").textContent =
+      "Enter a valid selling price.";
+    return;
+  }
 
-.change-row strong {
-  font-size: 20px;
-  overflow-wrap: anywhere;
-}
+  const importedProduct = findImportedProduct(name);
+  const supplierCost = importedProduct
+    ? getSupplierCost(importedProduct)
+    : null;
 
-.checkout-btn {
-  width: 100%;
-  padding: 15px;
-  font-size: 15px;
-}
+  const existing = cart.find(
+    (item) =>
+      normalizeName(item.name) === normalizeName(name) &&
+      item.price === price
+  );
 
-.message {
-  font-size: 13px;
-  line-height: 1.5;
-  margin-top: 10px;
-  color: #b91c1c;
-  overflow-wrap: anywhere;
-}
+  if (existing) {
+    existing.qty += quantity;
 
-.message.success {
-  color: #166534;
-}
+    if (supplierCost !== null) {
+      existing.supplierCost = supplierCost;
+    }
+  } else {
+    cart.push({
+      name,
+      price,
+      qty: quantity,
+      supplierCost
+    });
+  }
 
-.history-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 14px;
-  margin-bottom: 18px;
-}
+  $("checkoutMessage").textContent = "";
+  $("checkoutMessage").classList.remove("success");
 
-.history-header p {
-  color: #6b7280;
-  margin-top: 5px;
-}
+  $("saleProductName").value = "";
+  $("saleQuantity").value = "1";
+  $("salePrice").value = "";
 
-.secondary-btn {
-  background: #dcfce7;
-  color: #166534;
-}
+  renderCart();
+  $("saleProductName").focus();
+});
 
-.table-wrap {
-  width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  background: #fff;
-  border-radius: 10px;
-  box-shadow: 0 2px 8px #00000008;
-}
+// --------------------------------------------------
+// CART
+// --------------------------------------------------
 
-table {
-  width: 100%;
-  border-collapse: collapse;
-  min-width: 850px;
-}
+function renderCart() {
+  const container = $("cartItems");
+  container.replaceChildren();
 
-th,
-td {
-  text-align: left;
-  padding: 13px 14px;
-  border-bottom: 1px solid #e5e7eb;
-  font-size: 13px;
-}
+  if (!cart.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty-cart";
+
+    const icon = document.createElement("div");
+    icon.textContent = "🛒";
+
+    const message = document.createElement("p");
+    message.textContent = "No items in order";
+
+    const help = document.createElement("small");
+    help.textContent = "Add a product to begin a sale.";
+
+    empty.append(icon, message, help);
+    container.append(empty);
+  } else {
+    cart.forEach((item, index) => {
+      const row = document.createElement("div");
+      row.className = "cart-item";
+
+      const info = document.createElement("div");
+
+      const name = document.createElement("div");
+      name.className = "cart-item-name";
+      name.textContent = item.name;
+
+      const price = document.createElement("div");
+      price.className = "cart-item-price";
+      price.textContent = `${money(item.price)} each`;
+
+      const controls = document.createElement("div");
+      controls.className = "cart-item-controls";
 
-th {
-  background: #f9fafb;
-  color: #4b5563;
+      const minus = document.createElement("button");
+      minus.type = "button";
+      minus.className = "qty-btn";
+      minus.textContent = "−";
+      minus.setAttribute("aria-label", `Remove one ${item.name}`);
+      minus.addEventListener("click", () => changeQty(index, -1));
+
+      const quantity = document.createElement("span");
+      quantity.className = "qty";
+      quantity.textContent = String(item.qty);
+
+      const plus = document.createElement("button");
+      plus.type = "button";
+      plus.className = "qty-btn";
+      plus.textContent = "+";
+      plus.setAttribute("aria-label", `Add one ${item.name}`);
+      plus.addEventListener("click", () => changeQty(index, 1));
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "remove-btn";
+      remove.textContent = "Remove";
+      remove.addEventListener("click", () => {
+        cart.splice(index, 1);
+        renderCart();
+      });
+
+      controls.append(minus, quantity, plus, remove);
+      info.append(name, price, controls);
+
+      const lineTotal = document.createElement("div");
+      lineTotal.className = "cart-item-total";
+      lineTotal.textContent = money(item.price * item.qty);
+
+      row.append(info, lineTotal);
+      container.append(row);
+    });
+  }
+
+  const subtotal = getCartTotal();
+
+  $("subtotal").textContent = money(subtotal);
+  $("discount").textContent = money(0);
+  $("total").textContent = money(subtotal);
+
+  updateChange();
 }
 
-td .details-btn {
-  background: #dcfce7;
-  color: #166534;
-  border: 0;
-  border-radius: 5px;
-  padding: 8px;
-  min-height: 36px;
-  cursor: pointer;
+function getCartTotal() {
+  return cart.reduce(
+    (sum, item) => sum + item.price * item.qty,
+    0
+  );
 }
 
-/* Tablets and smaller laptops */
-@media (max-width: 1000px) {
-  .app-container {
-    padding: 16px;
-  }
+function changeQty(index, delta) {
+  const item = cart[index];
+  if (!item) return;
 
-  .pos-container {
-    grid-template-columns: minmax(0, 1fr);
-  }
+  const next = item.qty + delta;
 
-  .cart-section {
-    min-height: 0;
+  if (next <= 0) {
+    cart.splice(index, 1);
+  } else {
+    item.qty = next;
   }
 
-  .cart-items {
-    max-height: 360px;
-  }
+  renderCart();
+}
 
-  .user-info {
-    flex-direction: column;
-    gap: 5px;
-    align-items: flex-end;
-  }
+function updateChange() {
+  const total = getCartTotal();
+  const cash = Number($("cashReceived").value) || 0;
 
-  .product-grid {
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
-  }
+  $("change").textContent = money(Math.max(0, cash - total));
 }
 
-/* Tablets in portrait mode and large phones */
-@media (max-width: 768px) {
-  .topbar {
-    padding: 14px 18px;
-    gap: 12px;
-  }
+$("cashReceived").addEventListener("input", updateChange);
 
-  .topbar h1 {
-    font-size: 21px;
-  }
+$("clearCart").addEventListener("click", () => {
+  cart = [];
+  $("cashReceived").value = "";
+  $("checkoutMessage").textContent = "";
+  $("checkoutMessage").classList.remove("success");
 
-  .user-info {
-    font-size: 12px;
-  }
+  renderCart();
+});
 
-  .page-nav {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
+// --------------------------------------------------
+// COMPLETE SALE
+// --------------------------------------------------
 
-  .nav-btn {
-    width: 100%;
-    padding: 11px 8px;
-  }
+$("checkoutBtn").addEventListener("click", async () => {
+  if (isCheckingOut) return;
 
-  .signout-btn {
-    margin-left: 0;
-    width: 100%;
-    grid-column: 1 / -1;
+  if (!auth.currentUser) {
+    $("checkoutMessage").textContent = "Please sign in first.";
+    return;
   }
 
-  .section-header {
-    align-items: stretch;
+  if (!cart.length) {
+    $("checkoutMessage").textContent =
+      "Add at least one product before checkout.";
+    return;
   }
 
-  #searchProduct {
-    max-width: none;
-  }
+  const total = getCartTotal();
+  const cashInput = $("cashReceived").value.trim();
+  const cash = Number(cashInput);
 
-  .products-section {
-    padding: 16px;
+  if (
+    cashInput === "" ||
+    !Number.isFinite(cash) ||
+    cash < total
+  ) {
+    $("checkoutMessage").textContent =
+      "Cash received must be equal to or greater than the total.";
+    return;
   }
+
+  const purchased = cart.map((item) => ({ ...item }));
+  const cashier = auth.currentUser;
+
+  isCheckingOut = true;
+  $("checkoutBtn").disabled = true;
+  $("checkoutBtn").textContent = "SAVING SALE...";
+  $("checkoutMessage").textContent = "";
+  $("checkoutMessage").classList.remove("success");
+
+  try {
+    const orderRef = doc(ordersRef);
+
+    const uniqueNames = [
+      ...new Set(purchased.map((item) => normalizeName(item.name)))
+    ];
+
+    const productRefs = uniqueNames.map((name) => {
+      const saved = savedProducts.find(
+        (product) => normalizeName(product.name) === name
+      );
+
+      return {
+        name,
+        ref: saved
+          ? doc(db, "savedProducts", saved.id)
+          : doc(savedProductsRef)
+      };
+    });
+
+    await runTransaction(db, async (transaction) => {
+      const productSnapshots = [];
+
+      for (const product of productRefs) {
+        productSnapshots.push(await transaction.get(product.ref));
+      }
+
+      const productByName = new Map();
+
+      productRefs.forEach((product, index) => {
+        productByName.set(product.name, {
+          ref: product.ref,
+          snapshot: productSnapshots[index]
+        });
+      });
+
+      for (const product of productRefs) {
+        const matchingItems = purchased.filter(
+          (item) => normalizeName(item.name) === product.name
+        );
+
+        const latestItem = matchingItems[matchingItems.length - 1];
+        const saved = productByName.get(product.name);
+        const previous = saved.snapshot.exists()
+          ? saved.snapshot.data()
+          : {};
+
+        const previousTimesSold = Number(previous.timesSold) || 0;
+        const quantitySold = matchingItems.reduce(
+          (sum, item) => sum + item.qty,
+          0
+        );
+
+        transaction.set(
+          saved.ref,
+          {
+            name: latestItem.name,
+            lastPrice: latestItem.price,
+            updatedAt: serverTimestamp(),
+            lastSoldAt: serverTimestamp(),
+            timesSold: previousTimesSold + quantitySold
+          },
+          { merge: true }
+        );
+      }
+
+      const orderItems = purchased.map(
+        ({ name, price, qty, supplierCost }) => {
+          const importedProduct = findImportedProduct(name);
+
+          const cost =
+            supplierCost !== null && supplierCost !== undefined
+              ? Number(supplierCost)
+              : importedProduct
+                ? getSupplierCost(importedProduct)
+                : null;
 
-  .product-grid {
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 10px;
+          const lineTotal = price * qty;
+
+          return {
+            name,
+            price,
+            qty,
+            lineTotal,
+            supplierCost: cost,
+            estimatedProfit:
+              cost === null ? null : (price - cost) * qty
+          };
+        }
+      );
+
+      transaction.set(orderRef, {
+        orderNumber: orderRef.id,
+        status: "completed",
+        items: orderItems,
+        subtotal: total,
+        discount: 0,
+        total,
+        cashReceived: cash,
+        change: cash - total,
+        cashierUid: cashier.uid,
+        cashierEmail: cashier.email || "",
+        createdAt: serverTimestamp(),
+        createdAtLocal: new Date().toISOString()
+      });
+    });
+
+    cart = [];
+    $("cashReceived").value = "";
+    renderCart();
+
+    $("checkoutMessage").textContent =
+      `Sale saved successfully. Order ID: ${orderRef.id}`;
+    $("checkoutMessage").classList.add("success");
+
+    alert(
+      `Sale saved successfully!\n` +
+      `Order: ${orderRef.id}\n` +
+      `Total: ${money(total)}\n` +
+      `Change: ${money(cash - total)}`
+    );
+
+    await Promise.all([
+      loadSavedProducts(),
+      loadDailySummary(),
+      loadHistory(),
+      loadBestSellers(),
+      loadRevenue()
+    ]);
+  } catch (error) {
+    $("checkoutMessage").textContent = readableError(error);
+    $("checkoutMessage").classList.remove("success");
+  } finally {
+    isCheckingOut = false;
+    $("checkoutBtn").disabled = false;
+    $("checkoutBtn").textContent = "COMPLETE SALE";
   }
+});
+
+// --------------------------------------------------
+// NAVIGATION
+// --------------------------------------------------
+
+
+document.querySelectorAll(".nav-btn").forEach((button) => {
+  button.addEventListener("click", async () => {
+    document.querySelectorAll(".nav-btn").forEach((nav) => {
+      nav.classList.toggle("active", nav === button);
+    });
+
+    document.querySelectorAll(".page").forEach((page) => {
+      page.hidden = page.id !== button.dataset.page;
+    });
 
-  .product-card {
-    padding: 12px 9px;
+    if (button.dataset.page === "historyPage") {
+      await loadHistory();
+    }
+
+    if (button.dataset.page === "productsPage") {
+      await loadSavedProducts();
+    }
+
+    if (button.dataset.page === "revenuePage") {
+      await loadRevenue();
+    }
+  });
+});
+
+
+// --------------------------------------------------
+// DATE HELPERS
+// --------------------------------------------------
+
+function getOrderDate(order) {
+  if (order.createdAt?.toDate) {
+    return order.createdAt.toDate();
   }
 
-  .cart-header,
-  .order-summary {
-    padding: 16px;
+  if (order.createdAtLocal) {
+    const date = new Date(order.createdAtLocal);
+    return Number.isNaN(date.getTime()) ? null : date;
   }
+
+  return null;
 }
 
-/* Mobile phones */
-@media (max-width: 480px) {
-  .topbar {
-    flex-direction: column;
-    align-items: stretch;
-    padding: 16px;
-  }
+function getPeriodStart(period, now) {
+  const start = new Date(
+    now.getFullYear(),
+    now.getMonth(),
+    now.getDate()
+  );
 
-  .topbar h1 {
-    font-size: 20px;
-    line-height: 1.3;
-  }
+  if (period === "today") return start;
 
-  .user-info {
-    flex-direction: row;
-    justify-content: space-between;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 6px;
-    font-size: 12px;
+  if (period === "week") {
+    const day = start.getDay();
+    const daysSinceMonday = (day + 6) % 7;
+    start.setDate(start.getDate() - daysSinceMonday);
+    return start;
   }
 
-  .app-container {
-    padding: 10px;
+  if (period === "month") {
+    return new Date(now.getFullYear(), now.getMonth(), 1);
   }
 
-  .login-panel {
-    margin: 24px auto;
-    padding: 22px 18px;
-  }
+  return null;
+}
 
-  .page-nav {
-    gap: 7px;
-    padding: 8px;
-    margin-bottom: 12px;
-  }
+// --------------------------------------------------
+// SALES HISTORY
+// --------------------------------------------------
 
-  .nav-btn,
-  .signout-btn {
-    font-size: 13px;
-    padding: 10px 6px;
-  }
+$("refreshHistory").addEventListener("click", loadHistory);
 
-  .dashboard-stats {
-    gap: 8px;
-    margin-bottom: 12px;
-  }
+async function loadHistory() {
+  if (!auth.currentUser) return;
 
-  .stat-card {
-    padding: 12px;
-    gap: 6px;
-  }
+  $("historyMessage").textContent = "Loading orders...";
 
-  .stat-card span {
-    font-size: 12px;
-    line-height: 1.4;
-  }
+  const tbody = $("ordersTable");
+  tbody.replaceChildren();
 
-  .stat-card strong {
-    font-size: 18px;
-  }
+  try {
+    const snapshot = await getDocs(
+      query(ordersRef, orderBy("createdAt", "desc"), limit(200))
+    );
 
-  .products-section {
-    padding: 12px;
-  }
+    
+const allOrdersSnapshot = await getDocs(ordersRef);
 
-  .section-header {
-    flex-direction: column;
-    align-items: stretch;
-    gap: 10px;
-    margin-bottom: 14px;
-  }
 
-  .section-header h2,
-  .cart-header h2 {
-    font-size: 19px;
-  }
+let allTimeCashReceived = 0;
 
-  .categories {
-    margin-bottom: 14px;
-  }
+allOrdersSnapshot.docs.forEach((orderDoc) => {
+  const order = orderDoc.data();
 
-  .product-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 8px;
-  }
+  if (order.status && order.status !== "completed") return;
 
-  .product-card {
-    padding: 12px 8px;
-    gap: 8px;
-  }
+  allTimeCashReceived += Number(order.total) || 0;
+});
 
-  .product-icon {
-    font-size: 30px;
-  }
 
-  .product-card h3 {
-    font-size: 14px;
-  }
 
-  .product-meta {
-    font-size: 11px;
-  }
+    let totalSales = 0;
+    let completedOrderCount = 0;
 
-  .add-btn {
-    font-size: 13px;
-    padding: 10px 5px;
-  }
+    snapshot.docs.forEach((orderDoc) => {
+      const order = orderDoc.data();
 
-  .cart-header,
-  .order-summary {
-    padding: 13px;
-  }
+      if (order.status && order.status !== "completed") return;
 
-  .cart-items {
-    padding: 12px;
-    max-height: 320px;
-  }
+      totalSales += Number(order.total) || 0;
+      completedOrderCount++;
 
-  .cart-item {
-    gap: 6px;
-  }
+      const date = getOrderDate(order);
+      const items = Array.isArray(order.items) ? order.items : [];
 
-  .cart-item-total {
-    font-size: 13px;
-  }
+      const itemCount = items.reduce(
+        (sum, item) => sum + (Number(item.qty) || 0),
+        0
+      );
 
-  .summary-row {
-    font-size: 14px;
-  }
+      const productsSold = items.map((item) => {
+        const name = String(item.name || "Unnamed product");
+        const qty = Number(item.qty) || 0;
+        return `${name} × ${qty}`;
+      }).join(", ");
 
-  .total-row {
-    font-size: 18px;
-  }
+      const values = [
+        order.orderNumber || orderDoc.id,
+        date ? date.toLocaleString("en-PH") : "Pending timestamp",
+        productsSold || "No items recorded",
+        String(itemCount),
+        money(order.total),
+        money(order.cashReceived),
+        money(order.change),
+        order.cashierEmail || order.cashierUid || "—"
+      ];
 
-  .change-row strong {
-    font-size: 18px;
-  }
+      const tr = document.createElement("tr");
 
-  .history-header {
-    flex-direction: column;
-    align-items: stretch;
-  }
+      values.forEach((value) => {
+        const td = document.createElement("td");
+        td.textContent = value;
+        tr.append(td);
+      });
 
-  .history-header .secondary-btn {
-    width: 100%;
-  }
+      tbody.append(tr);
+    });
 
-  table {
-    min-width: 800px;
-  }
+    if (!tbody.children.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+
+      td.colSpan = 8;
+      td.textContent = "No completed orders found.";
+
+      tr.append(td);
+      tbody.append(tr);
+    }
 
-  th,
-  td {
-    padding: 11px 10px;
-    font-size: 12px;
+    $("historySales").textContent = money(totalSales);
+    $("historyCount").textContent = String(completedOrderCount);
+    $("historyCashReceived").textContent = money(allTimeCashReceived);
+
+    $("historyMessage").textContent =
+      snapshot.size === 200
+        ? "Showing up to the latest 200 orders."
+        : "";
+  } catch (error) {
+    console.error("Sales History failed:", error);
+    $("historyMessage").textContent =
+      `Could not load history: ${readableError(error)}`;
   }
 }
 
-/* Very narrow phones */
-@media (max-width: 360px) {
-  .app-container {
-    padding: 7px;
-  }
+// --------------------------------------------------
+// TODAY'S SUMMARY
+// --------------------------------------------------
 
-  .topbar {
-    padding: 13px;
-  }
+async function loadDailySummary() {
+  if (!auth.currentUser) return;
 
-  .product-grid {
-    gap: 6px;
-  }
+  try {
+    const snapshot = await getDocs(
+      query(ordersRef, orderBy("createdAt", "desc"), limit(500))
+    );
 
-  .product-card {
-    padding: 10px 6px;
-  }
+    const now = new Date();
+    const start = new Date(
+      now.getFullYear(),
+      now.getMonth(),
+      now.getDate()
+    );
 
-  .stat-card {
-    padding: 10px;
-  }
+    const end = new Date(start);
+    end.setDate(end.getDate() + 1);
 
-  .stat-card strong {
-    font-size: 16px;
-  }
+    let total = 0;
+    let count = 0;
 
-  .cart-item {
-    grid-template-columns: minmax(0, 1fr);
-  }
+    snapshot.docs.forEach((orderDoc) => {
+      const order = orderDoc.data();
+
+      if (order.status && order.status !== "completed") return;
+
+      const date = getOrderDate(order);
 
-  .cart-item-total {
-    padding-left: 2px;
+      if (date && date >= start && date < end) {
+        total += Number(order.total) || 0;
+        count++;
+      }
+    });
+
+    $("todaySales").textContent = money(total);
+    $("todayCount").textContent = String(count);
+  } catch (error) {
+    console.error("Daily summary failed:", error);
   }
 }
 
+// --------------------------------------------------
+// BEST SELLERS
+// --------------------------------------------------
 
-.sales-chart-card {
-  background: #fff;
-  border-radius: 10px;
-  padding: 20px;
-  margin: 20px 0;
-  box-shadow: 0 2px 8px #00000008;
-  min-width: 0;
-}
+$("refreshBestSellers").addEventListener("click", loadBestSellers);
+$("bestSellerPeriod").addEventListener("change", loadBestSellers);
 
-.sales-chart-header {
-  margin-bottom: 20px;
-}
+async function loadBestSellers() {
+  if (!auth.currentUser) return;
 
-.sales-chart-header h3 {
-  font-size: 20px;
-  margin-bottom: 6px;
-}
+  $("bestSellersMessage").textContent = "Loading sales data...";
 
-.sales-chart-header p {
-  color: #6b7280;
-  font-size: 13px;
-}
+  const tbody = $("bestSellersTable");
+  tbody.replaceChildren();
 
-.sales-chart-container {
-  position: relative;
-  width: 100%;
-  height: 320px;
-}
+  try {
+    const snapshot = await getDocs(ordersRef);
+    const now = new Date();
+    const start = getPeriodStart($("bestSellerPeriod").value, now);
 
-@media (max-width: 600px) {
-  .sales-chart-card {
-    padding: 14px;
-  }
+    const stats = new Map();
 
-  .sales-chart-container {
-    height: 250px;
-  }
+    let orderCount = 0;
+    let totalUnits = 0;
+    let totalRevenue = 0;
+    let totalProfit = 0;
+    let profitUnknown = false;
+
+    snapshot.docs.forEach((orderDoc) => {
+      const order = orderDoc.data();
+
+      if (order.status && order.status !== "completed") return;
+
+      const date = getOrderDate(order);
+      if (!date || (start && date < start) || date > now) return;
+
+      orderCount++;
+      totalRevenue += Number(order.total) || 0;
+
+      const items = Array.isArray(order.items) ? order.items : [];
+
+      items.forEach((item) => {
+        const name = String(item.name || "Unnamed product").trim();
+        const key = normalizeName(name);
+        const qty = Number(item.qty) || 0;
+        const price = Number(item.price);
+
+        const revenue = Number.isFinite(Number(item.lineTotal))
+          ? Number(item.lineTotal)
+          : Number.isFinite(price)
+            ? price * qty
+            : 0;
+
+        if (!stats.has(key)) {
+          stats.set(key, {
+            name,
+            units: 0,
+            revenue: 0,
+            profit: 0,
+            profitUnknown: false
+          });
+        }
+
+        const product = stats.get(key);
+        product.units += qty;
+        product.revenue += revenue;
+        totalUnits += qty;
+
+        let itemProfit = null;
+
+        if (typeof item.estimatedProfit === "number") {
+          itemProfit = item.estimatedProfit;
+        } else if (
+          typeof item.supplierCost === "number" &&
+          Number.isFinite(price)
+        ) {
+          itemProfit = (price - item.supplierCost) * qty;
+        }
 
-  .sales-chart-header h3 {
-    font-size: 18px;
+        if (itemProfit === null) {
+          product.profitUnknown = true;
+          profitUnknown = true;
+        } else {
+          product.profit += itemProfit;
+          totalProfit += itemProfit;
+        }
+      });
+    });
+
+    $("bestSellerOrderCount").textContent = String(orderCount);
+    $("bestSellerUnits").textContent = String(totalUnits);
+    $("bestSellerRevenue").textContent = money(totalRevenue);
+    $("bestSellerProfit").textContent =
+      profitUnknown ? "Unavailable" : money(totalProfit);
+
+    const ranked = [...stats.values()].sort(
+      (a, b) => b.units - a.units || b.revenue - a.revenue
+    );
+
+    if (!ranked.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+
+      td.colSpan = 5;
+      td.textContent = "No completed sales found for this period.";
+
+      tr.append(td);
+      tbody.append(tr);
+    } else {
+      ranked.forEach((product, index) => {
+        const tr = document.createElement("tr");
+
+        const values = [
+          String(index + 1),
+          product.name,
+          String(product.units),
+          money(product.revenue),
+          product.profitUnknown ? "Unavailable" : money(product.profit)
+        ];
+
+        values.forEach((value) => {
+          const td = document.createElement("td");
+          td.textContent = value;
+          tr.append(td);
+        });
+
+        tbody.append(tr);
+      });
+    }
+
+    $("bestSellersMessage").textContent =
+      "Ranked by units sold, with revenue breaking ties. Profit is unavailable when cost information is missing.";
+  } catch (error) {
+    $("bestSellersMessage").textContent =
+      `Could not load Best Sellers: ${readableError(error)}`;
   }
 }
 
 
-.product-dropdown {
-  position: relative;
-  width: 100%;
-}
+/* --------------------------------------------------
+   PRODUCTS PAGE TABS
+-------------------------------------------------- */
 
-.product-dropdown-list {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  right: 0;
-  z-index: 1000;
-  max-height: 260px;
-  overflow-y: auto;
-  background: #fff;
-  border: 1px solid #d1d5db;
-  border-radius: 10px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.12);
-}
+document.querySelectorAll(".product-tab-btn").forEach((button) => {
+  button.addEventListener("click", () => {
+    const targetId = button.dataset.productTab;
 
-.product-dropdown-list[hidden] {
-  display: none;
-}
+    document.querySelectorAll(".product-tab-btn").forEach((tab) => {
+      tab.classList.toggle("active", tab === button);
+    });
 
-.product-dropdown-option {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 4px;
-  width: 100%;
-  padding: 12px 14px;
-  border: none;
-  border-bottom: 1px solid #eee;
-  background: #fff;
-  color: #222;
-  text-align: left;
-  cursor: pointer;
-  font: inherit;
-}
+    document.querySelectorAll(".product-tab-panel").forEach((panel) => {
+      panel.hidden = panel.id !== targetId;
+    });
 
-.product-dropdown-option:last-child {
-  border-bottom: none;
-}
+    // Load the Best Sellers report when its tab is opened.
+    if (targetId === "bestSellersPanel") {
+      loadBestSellers();
+    }
 
-.product-dropdown-option:active {
-  background: #f3f4f6;
-}
+    // Refresh saved products when All Products is opened.
+    if (targetId === "allProductsPanel") {
+      loadSavedProducts();
+    }
+  });
+});
 
-.product-dropdown-option small {
-  color: #6b7280;
-  font-size: 12px;
-}
 
+/* --------------------------------------------------
+   ALL PRODUCTS LIST
+-------------------------------------------------- */
 
-.product-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 18px 0;
-  border-bottom: 1px solid #e5e7eb;
-}
 
-.product-tab-btn {
-  padding: 11px 16px;
-  border: none;
-  border-bottom: 3px solid transparent;
-  background: transparent;
-  color: #6b7280;
-  font: inherit;
-  font-weight: 600;
-  cursor: pointer;
-}
+function renderProductsTable() {
+  const container = $("productsTable");
+  const searchInput = $("productSearch");
+  const message = $("productsMessage");
+  const count = $("productsCount");
 
-.product-tab-btn.active {
-  color: #166534;
-  border-bottom-color: #16a34a;
-}
+  if (!container) return;
 
-.product-tab-panel {
-  min-width: 0;
-}
+  const search = (searchInput?.value || "").trim().toLowerCase();
 
-.product-list-toolbar {
-  display: flex;
-  gap: 10px;
-  margin: 16px 0;
-}
+  const filteredProducts = savedProducts
+    .filter((product) =>
+      String(product.name || "").toLowerCase().includes(search)
+    )
+    .sort((a, b) =>
+      String(a.name || "").localeCompare(String(b.name || ""))
+    );
 
-.product-list-toolbar input {
-  flex: 1;
-  min-width: 0;
-}
+  container.replaceChildren();
 
-@media (max-width: 600px) {
-  .product-tabs {
-    gap: 2px;
+  if (count) {
+    count.textContent = `${filteredProducts.length} product(s)`;
   }
 
-  .product-tab-btn {
-    flex: 1;
-    padding: 10px 8px;
-    font-size: 14px;
-  }
+  if (filteredProducts.length === 0) {
+    const empty = document.createElement("div");
+    empty.className = "products-empty";
+    empty.textContent = search
+      ? "No products match your search."
+      : "No saved products found.";
 
-  .product-list-toolbar {
-    flex-direction: column;
-  }
+    container.appendChild(empty);
 
-  .product-list-toolbar button {
-    width: 100%;
+    if (message) message.textContent = "";
+    return;
   }
-}
 
+  filteredProducts.forEach((product, index) => {
+    const card = document.createElement("article");
+    card.className = "saved-product-card";
 
-/* =====================================
-   PRODUCTS CATALOG
-===================================== */
+    const top = document.createElement("div");
+    top.className = "product-card-top";
 
-.products-list-container {
-  width: 100%;
-  min-width: 0;
-  margin-top: 16px;
-}
+    const icon = document.createElement("div");
+    icon.className = "product-card-icon";
+    icon.textContent = "▦";
+    icon.setAttribute("aria-hidden", "true");
 
-.products-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
-  width: 100%;
-}
+    const info = document.createElement("div");
+    info.className = "product-card-info";
 
-.product-card {
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  gap: 16px;
-  min-width: 0;
-  padding: 18px;
-  background: #ffffff;
-  border: 1px solid #e5e7eb;
-  border-radius: 14px;
-  box-shadow: 0 3px 10px rgba(15, 23, 42, 0.04);
-  transition: border-color 0.2s ease, box-shadow 0.2s ease;
-}
+    const name = document.createElement("h3");
+    name.className = "product-card-name";
+    name.textContent = product.name || "Unnamed product";
 
-.product-card:hover {
-  border-color: #bbf7d0;
-  box-shadow: 0 6px 18px rgba(15, 23, 42, 0.08);
-}
+    const label = document.createElement("span");
+    label.className = "product-card-label";
+    label.textContent = "Saved product";
 
-.product-card-top {
-  display: flex;
-  align-items: flex-start;
-  gap: 12px;
-  min-width: 0;
-}
+    info.append(name, label);
+    top.append(icon, info);
 
-.product-card-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 44px;
-  width: 44px;
-  height: 44px;
-  border-radius: 12px;
-  background: #f0fdf4;
-  color: #15803d;
-  font-size: 21px;
-}
+    const bottom = document.createElement("div");
+    bottom.className = "product-card-bottom";
 
-.product-card-info {
-  flex: 1;
-  min-width: 0;
-}
+    const priceInfo = document.createElement("div");
 
-.product-card-name {
-  margin: 2px 0 6px;
-  color: #111827;
-  font-size: 15px;
-  font-weight: 700;
-  line-height: 1.45;
-  overflow-wrap: anywhere;
-}
+    const priceLabel = document.createElement("span");
+    priceLabel.className = "product-price-label";
+    priceLabel.textContent = "Last sold price";
 
-.product-card-label {
-  color: #6b7280;
-  font-size: 12px;
-}
+    const priceText = document.createElement("div");
+    priceText.className = "product-card-price";
 
-.product-card-bottom {
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 8px;
-  padding-top: 14px;
-  border-top: 1px solid #f0f0f0;
-}
+    const price = Number(product.lastPrice);
 
-.product-price-label {
-  display: block;
-  margin-bottom: 5px;
-  color: #6b7280;
-  font-size: 12px;
-}
+    priceText.textContent =
+      product.lastPrice !== undefined &&
+      product.lastPrice !== null &&
+      product.lastPrice !== "" &&
+      Number.isFinite(price)
+        ? money(price)
+        : "No price saved";
 
-.product-card-price {
-  color: #15803d;
-  font-size: 21px;
-  font-weight: 800;
-  line-height: 1.25;
-  overflow-wrap: anywhere;
-}
+    priceInfo.append(priceLabel, priceText);
 
-.product-card-number {
-  color: #9ca3af;
-  font-size: 12px;
-  white-space: nowrap;
-}
+    const number = document.createElement("span");
+    number.className = "product-card-number";
+    number.textContent = `#${index + 1}`;
 
-.products-empty {
-  grid-column: 1 / -1;
-  padding: 32px 16px;
-  color: #6b7280;
-  background: #ffffff;
-  border: 1px dashed #d1d5db;
-  border-radius: 12px;
-  text-align: center;
+    bottom.append(priceInfo, number);
+    card.append(top, bottom);
+    container.appendChild(card);
+  });
+
+  if (message) message.textContent = "";
 }
 
-/* Tablet */
-@media (max-width: 900px) {
-  .products-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
 
-  .product-card {
-    padding: 15px;
-  }
-}
 
-/* Mobile */
-@media (max-width: 600px) {
-  .products-grid {
-    grid-template-columns: minmax(0, 1fr);
-    gap: 10px;
-  }
+// Search products as the user types.
+$("productSearch").addEventListener("input", renderProductsTable);
 
-  .product-card {
-    padding: 15px;
-    border-radius: 12px;
-  }
+
+// Refresh saved products from Firebase.
+$("refreshProducts").addEventListener("click", loadSavedProducts);
+
+
 
-  .product-card-top {
-    gap: 11px;
+/* SALES OVERVIEW GRAPH */
+
+let salesOverviewChart = null;
+
+function renderSalesOverviewChart(dailySales) {
+  const canvas = $("salesOverviewChart");
+  const message = $("salesChartMessage");
+
+  if (!canvas) {
+    console.warn("Sales Overview canvas was not found.");
+    return;
   }
 
-  .product-card-icon {
-    flex-basis: 42px;
-    width: 42px;
-    height: 42px;
+  const entries = [...dailySales.entries()]
+    .sort(([dateA], [dateB]) => dateA.localeCompare(dateB));
+
+  if (salesOverviewChart) {
+    salesOverviewChart.destroy();
+    salesOverviewChart = null;
   }
 
-  .product-card-name {
-    font-size: 15px;
+  if (!entries.length) {
+    if (message) {
+      message.textContent = "No sales data available for this period.";
+    }
+    return;
   }
 
-  .product-card-price {
-    font-size: 20px;
+  if (message) {
+    message.textContent = "";
   }
+
+  salesOverviewChart = new Chart(canvas, {
+    type: "bar",
+    data: {
+      labels: entries.map(([date]) => {
+        const [year, month, day] = date.split("-").map(Number);
+
+        return new Date(year, month - 1, day).toLocaleDateString("en-PH", {
+          month: "short",
+          day: "numeric"
+        });
+      }),
+
+      datasets: [{
+        label: "Daily Sales",
+        data: entries.map(([, total]) => total),
+        backgroundColor: "#22a06b",
+        hoverBackgroundColor: "#16794b",
+        borderRadius: 6,
+        borderSkipped: false,
+        maxBarThickness: 38,
+        categoryPercentage: 0.75,
+        barPercentage: 0.85
+      }]
+    },
+
+    
+options: {
+  responsive: true,
+  maintainAspectRatio: false,
+
+  plugins: {
+    legend: {
+      display: false
+    },
+    tooltip: {
+      backgroundColor: "#172b4d",
+      titleColor: "#ffffff",
+      bodyColor: "#ffffff",
+      padding: 12,
+      cornerRadius: 8,
+      displayColors: false,
+      callbacks: {
+        title: (items) => `Date: ${items[0].label}`,
+        label: (context) => `Sales: ${money(context.parsed.y)}`
+      }
+    }
+  },
+
+  scales: {
+    y: {
+      beginAtZero: true,
+      grace: "10%",
+      border: {
+        display: false
+      },
+      grid: {
+        color: "#edf0f4"
+      },
+      ticks: {
+        callback: (value) =>
+          "₱" + Number(value).toLocaleString("en-PH")
+      }
+    },
 
-  .products-list-container {
-    margin-top: 12px;
+    x: {
+      grid: {
+        display: false
+      },
+      ticks: {
+        autoSkip: false,
+        maxRotation: 45,
+        minRotation: 0,
+        color: "#475569"
+      }
+    }
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .product-card {
-    transition: none;
-  }
+  });
 }
 
 
-/* Make Today's Sales amount bigger */
-#todaySales {
-  font-size: clamp(2rem, 4vw, 3rem);
-  font-weight: 800;
-  line-height: 1.2;
-  letter-spacing: -1px;
-}
+// --------------------------------------------------
+// REVENUE & PROFIT
+// --------------------------------------------------
 
-/* Keep the amount responsive on mobile */
-@media (max-width: 600px) {
-  #todaySales {
-    font-size: 2.2rem;
-  }
-}
+$("refreshRevenue").addEventListener("click", loadRevenue);
+$("revenuePeriod").addEventListener("change", loadRevenue);
 
+async function loadRevenue() {
+  if (!auth.currentUser) return;
 
-/* Highlight Total Money Received */
-#historyCashReceived {
-  font-size: clamp(1.8rem, 3vw, 2.5rem);
-  font-weight: 800;
-  line-height: 1.25;
-  letter-spacing: -0.8px;
-  margin-top: 10px;
-  margin-bottom: 8px;
-}
+  $("revenueMessage").textContent = "Loading revenue report...";
 
-/* Give the card a little more breathing room */
-.summary-card:has(#historyCashReceived) {
-  padding: 24px;
-  min-height: 145px;
-}
+  const tbody = $("revenueTable");
+  tbody.replaceChildren();
 
-/* Keep it comfortable on mobile */
-@media (max-width: 600px) {
-  #historyCashReceived {
-    font-size: 1.9rem;
-    overflow-wrap: anywhere;
-  }
+  try {
+    const snapshot = await getDocs(ordersRef);
+    const now = new Date();
+    const start = getPeriodStart($("revenuePeriod").value, now);
 
-  .summary-card:has(#historyCashReceived) {
-    padding: 20px;
-    min-height: 125px;
-  }
-}
+    let revenue = 0;
+let cost = 0;
+let profit = 0;
+let orderCount = 0;
+let unknownCosts = false;
 
+const products = new Map();
+const dailySales = new Map();
 
+    snapshot.docs.forEach((orderDoc) => {
+      const order = orderDoc.data();
 
-/* Improved Sales Overview graph */
-.sales-chart-card {
-  padding: 24px;
-  border: 1px solid #e5e7eb;
-  border-radius: 16px;
-  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05);
-}
+      if (order.status && order.status !== "completed") return;
 
-.sales-chart-header {
-  margin-bottom: 24px;
-}
+      const date = getOrderDate(order);
+      if (!date || (start && date < start) || date > now) return;
 
-.sales-chart-header h3 {
-  font-size: 22px;
-  font-weight: 700;
-  color: #111827;
-  letter-spacing: -0.4px;
-}
+      const items = Array.isArray(order.items) ? order.items : [];
+      if (!items.length) return;
 
-.sales-chart-header p {
-  margin-top: 6px;
-  color: #6b7280;
-  font-size: 14px;
-}
+      orderCount++;
 
-.sales-chart-container {
-  position: relative;
-  width: 100%;
-  height: 350px;
-}
+const orderTotal = Number(order.total) || 0;
+revenue += orderTotal;
 
-@media (max-width: 600px) {
-  .sales-chart-card {
-    padding: 16px 12px;
-    border-radius: 12px;
-  }
+// Group completed sales by local calendar date.
+const dateKey = [
+  date.getFullYear(),
+  String(date.getMonth() + 1).padStart(2, "0"),
+  String(date.getDate()).padStart(2, "0")
+].join("-");
 
-  .sales-chart-container {
-    height: 280px;
-  }
+dailySales.set(
+  dateKey,
+  (dailySales.get(dateKey) || 0) + orderTotal
+);
 
-  .sales-chart-header {
-    margin-bottom: 16px;
-  }
+      items.forEach((item) => {
+        const name = String(item.name || "Unnamed product").trim();
+        const key = normalizeName(name);
+        const qty = Number(item.qty) || 0;
+        const price = Number(item.price) || 0;
 
-  .sales-chart-header h3 {
-    font-size: 19px;
-  }
-}
+        const lineRevenue = Number.isFinite(Number(item.lineTotal))
+          ? Number(item.lineTotal)
+          : price * qty;
 
-.sales-chart-container {
-  position: relative;
-  width: 100%;
-  height: 380px;
-}
+        const importedProduct = findImportedProduct(name);
 
-@media (max-width: 600px) {
-  .sales-chart-container {
-    height: 320px;
-  }
-}
+        const storedCost =
+          typeof item.supplierCost === "number"
+            ? item.supplierCost
+            : null;
+
+        const currentCost = importedProduct
+          ? getSupplierCost(importedProduct)
+          : null;
+
+        const unitCost = storedCost !== null
+          ? storedCost
+          : currentCost;
+
+        if (!products.has(key)) {
+          products.set(key, {
+            name,
+            units: 0,
+            revenue: 0,
+            cost: 0,
+            profit: 0,
+            unknown: false
+          });
+        }
+
+        const product = products.get(key);
+
+        product.units += qty;
+        product.revenue += lineRevenue;
+
+        if (unitCost === null) {
+          product.unknown = true;
+          unknownCosts = true;
+        } else {
+          const lineCost = unitCost * qty;
+          const lineProfit = lineRevenue - lineCost;
+
+          cost += lineCost;
+          profit += lineProfit;
+          product.cost += lineCost;
+          product.profit += lineProfit;
+        }
+      });
+    });
 
+    $("revenueTotal").textContent = money(revenue);
+    $("revenueCost").textContent =
+      unknownCosts ? "Incomplete" : money(cost);
 
+    $("revenueProfit").textContent =
+      unknownCosts ? "Incomplete" : money(profit);
 
+    $("revenueOrderCount").textContent = String(orderCount);
 
+    renderSalesOverviewChart(dailySales);
 
+    const ranked = [...products.values()].sort(
+      (a, b) => b.revenue - a.revenue
+    );
+
+    if (!ranked.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+
+      cell.colSpan = 5;
+      cell.textContent = "No completed sales found for this period.";
+
+      row.append(cell);
+      tbody.append(row);
+    } else {
+      ranked.forEach((product) => {
+        const row = document.createElement("tr");
+
+        const values = [
+          product.name,
+          String(product.units),
+          money(product.revenue),
+          product.unknown ? "Unknown" : money(product.cost),
+          product.unknown ? "Unknown" : money(product.profit)
+        ];
+
+        values.forEach((value) => {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
+        });
+
+        tbody.append(row);
+      });
+    }
+
+    $("revenueMessage").textContent = unknownCosts
+      ? "Some products have no matching supplier cost. Totals marked Incomplete exclude unknown costs, so actual gross profit may differ."
+      : "Report loaded. Older sales without a saved supplier cost use the currently imported cost, which may differ from the cost at the time of sale.";
+  } catch (error) {
+    console.error("Revenue report failed:", error);
+
+    $("revenueMessage").textContent =
+      `Could not load revenue report: ${readableError(error)}`;
+  }
+}
