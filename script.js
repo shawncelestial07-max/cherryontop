@@ -129,13 +129,12 @@ onAuthStateChanged(auth, async (user) => {
   $("cashierLabel").textContent =
     `Cashier: ${user.email || user.uid}`;
 
-  await loadImportedProducts();
-  await loadSavedProducts();
-  await loadDailySummary();
-  await loadHistory();
-  await loadBestSellers();
-  await loadRevenue();
-});
+    await Promise.all([
+    loadImportedProducts(),
+    loadSavedProducts(),
+    loadDailySummary()
+  ]);
+  });
 
 // --------------------------------------------------
 // SUPPLIER COST AND IMPORTED PRODUCTS
