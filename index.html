@@ -58,6 +58,10 @@
     Revenue &amp; Profit
   </button>
 
+  <button type="button" class="nav-btn" data-page="computerShopPage">
+    Computer Shop
+  </button>
+
   <button type="button" id="signOutBtn" class="signout-btn">
     Sign out
   </button>
@@ -403,6 +407,105 @@
     <p id="bestSellersMessage" class="message" role="status"></p>
   </div>
 </section>
+
+      <!-- COMPUTER SHOP SALES TRACKER -->
+      <section id="computerShopPage" class="page" hidden>
+        <div class="history-header">
+          <div>
+            <h2>Computer Shop Sales</h2>
+            <p>Record each time package against the PC the customer used.</p>
+          </div>
+          <button type="button" id="refreshComputerShop" class="secondary-btn">Refresh report</button>
+        </div>
+
+        <div class="computer-shop-layout">
+          <section class="computer-shop-form-card">
+            <h3>Record a sale</h3>
+            <form id="computerShopSaleForm" class="computer-shop-form">
+              <label for="computerShopPc">Computer</label>
+              <select id="computerShopPc" required>
+                <option value="PC 1" selected>PC 1</option>
+                <option value="PC 2">PC 2</option>
+                <option value="PC 3">PC 3</option>
+                <option value="PC 4">PC 4</option>
+                <option value="PC 5">PC 5</option>
+                <option value="PC 6">PC 6</option>
+              </select>
+
+              <label for="computerShopPackage">Time package</label>
+              <select id="computerShopPackage" required>
+                <option value="30 minutes" data-minutes="30" data-price="10">30 minutes — ₱10</option>
+                <option value="1 hour" data-minutes="60" data-price="20" selected>1 hour — ₱20</option>
+                <option value="2 hours" data-minutes="120" data-price="40">2 hours — ₱40</option>
+                <option value="5 hours" data-minutes="300" data-price="100">5 hours — ₱100</option>
+              </select>
+
+              <div class="computer-shop-sale-total">
+                <span>Sale amount</span>
+                <strong id="computerShopSalePrice">₱20.00</strong>
+              </div>
+
+              <button type="submit" id="saveComputerShopSale" class="primary-btn">Save sale</button>
+              <p id="computerShopFormMessage" class="message" role="status" aria-live="polite"></p>
+            </form>
+          </section>
+
+          <section class="computer-shop-report-card">
+            <div class="computer-shop-report-header">
+              <div>
+                <h3>Sales report</h3>
+                <p>Revenue and session counts by computer.</p>
+              </div>
+              <div class="computer-shop-period">
+                <label for="computerShopPeriod">Period</label>
+                <select id="computerShopPeriod">
+                  <option value="today" selected>Today</option>
+                  <option value="week">This week</option>
+                  <option value="month">This month</option>
+                  <option value="all">All time</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="dashboard-stats computer-shop-stats">
+              <article class="stat-card">
+                <span>Total revenue</span>
+                <strong id="computerShopTotalRevenue">₱0.00</strong>
+              </article>
+              <article class="stat-card">
+                <span>Sessions sold</span>
+                <strong id="computerShopSessionCount">0</strong>
+              </article>
+              <article class="stat-card">
+                <span>Top-earning PC</span>
+                <strong id="computerShopTopPc">—</strong>
+              </article>
+            </div>
+
+            <div id="computerShopPcReport" class="computer-shop-pc-grid"></div>
+            <p id="computerShopReportMessage" class="message" role="status" aria-live="polite"></p>
+          </section>
+        </div>
+
+        <section class="computer-shop-history-card">
+          <h3>Recorded computer shop sales</h3>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Date &amp; time</th>
+                  <th>Computer</th>
+                  <th>Package</th>
+                  <th>Amount</th>
+                </tr>
+              </thead>
+              <tbody id="computerShopSalesTable">
+                <tr><td colspan="4">Open this page to load sales.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </section>
 
       <!-- REVENUE & PROFIT -->
 
