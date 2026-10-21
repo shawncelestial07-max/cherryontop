@@ -1280,3 +1280,111 @@ td .details-btn {
 
 
 
+
+
+/* --------------------------------------------------
+   COMPUTER SHOP SALES TRACKER
+-------------------------------------------------- */
+.computer-shop-layout {
+  display: grid;
+  grid-template-columns: minmax(260px, 340px) minmax(0, 1fr);
+  gap: 20px;
+  align-items: start;
+}
+
+.computer-shop-form-card,
+.computer-shop-report-card,
+.computer-shop-history-card {
+  background: #ffffff;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 22px;
+  min-width: 0;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, 0.04);
+}
+
+.computer-shop-form-card h3,
+.computer-shop-report-card h3,
+.computer-shop-history-card h3 {
+  margin: 0 0 16px;
+  color: #172b4d;
+}
+
+.computer-shop-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.computer-shop-form label,
+.computer-shop-period label {
+  font-weight: 600;
+  color: #374151;
+  font-size: 14px;
+}
+
+.computer-shop-form select,
+.computer-shop-period select {
+  width: 100%;
+  min-height: 44px;
+  border: 1px solid #d1d5db;
+  border-radius: 8px;
+  padding: 10px 12px;
+  background: #fff;
+  color: #111827;
+  font: inherit;
+}
+
+.computer-shop-sale-total {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin: 8px 0;
+  padding: 16px;
+  border-radius: 10px;
+  background: #f0fdf4;
+  color: #166534;
+}
+
+.computer-shop-sale-total strong {
+  font-size: 24px;
+}
+
+.computer-shop-report-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.computer-shop-report-header h3 { margin-bottom: 5px; }
+.computer-shop-report-header p { margin: 0; color: #6b7280; font-size: 14px; }
+.computer-shop-period { display: grid; gap: 6px; min-width: 130px; }
+.computer-shop-stats { margin-bottom: 18px; }
+.computer-shop-pc-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.computer-shop-pc-card { border: 1px solid #e5e7eb; border-radius: 10px; padding: 13px; min-width: 0; }
+.computer-shop-pc-heading { display: flex; justify-content: space-between; gap: 8px; align-items: center; margin-bottom: 10px; }
+.computer-shop-pc-heading strong { color: #172b4d; }
+.computer-shop-pc-heading span { font-weight: 700; font-variant-numeric: tabular-nums; }
+.computer-shop-pc-card small { display: block; color: #6b7280; margin-top: 8px; }
+.computer-shop-progress-track { height: 7px; background: #eef2f7; border-radius: 99px; overflow: hidden; }
+.computer-shop-progress-bar { height: 100%; background: #16a34a; border-radius: 99px; transition: width 180ms ease; }
+.computer-shop-history-card { margin-top: 20px; }
+.computer-shop-history-card .table-wrap { overflow-x: auto; }
+
+@media (max-width: 900px) {
+  .computer-shop-layout { grid-template-columns: 1fr; }
+  .computer-shop-form-card { max-width: none; }
+}
+
+@media (max-width: 560px) {
+  .computer-shop-form-card,
+  .computer-shop-report-card,
+  .computer-shop-history-card { padding: 15px; }
+  .computer-shop-report-header { flex-direction: column; }
+  .computer-shop-period { width: 100%; }
+  .computer-shop-pc-grid { grid-template-columns: 1fr; }
+  .computer-shop-sale-total strong { font-size: 21px; }
+}
