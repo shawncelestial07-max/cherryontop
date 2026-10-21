@@ -3,6 +3,7 @@ import { db, auth } from "./firebase.js";
 
 import {
   collection,
+  addDoc,
   getDocs,
   doc,
   runTransaction,
@@ -44,6 +45,8 @@ let isCheckingOut = false;
 const importedProductsRef = collection(db, "products");
 const ordersRef = collection(db, "orders");
 const savedProductsRef = collection(db, "savedProducts");
+// Kept separate from the sari-sari store's orders collection.
+const computerShopSalesRef = collection(db, "computerShopSales");
 
 // --------------------------------------------------
 // CLOCK
@@ -729,6 +732,10 @@ document.querySelectorAll(".nav-btn").forEach((button) => {
 
     if (button.dataset.page === "revenuePage") {
       await loadRevenue();
+    }
+
+    if (button.dataset.page === "computerShopPage") {
+      await loadComputerShopReport();
     }
   });
 });
@@ -1493,3 +1500,203 @@ dailySales.set(
       `Could not load revenue report: ${readableError(error)}`;
   }
 }
+
+// --------------------------------------------------
+// COMPUTER SHOP SALES TRACKER
+// --------------------------------------------------
+
+const COMPUTER_SHOP_PACKAGES = {
+  "30 minutes": { minutes: 30, price: 10 },
+  "1 hour": { minutes: 60, price: 20 },
+  "2 hours": { minutes: 120, price: 40 },
+  "5 hours": { minutes: 300, price: 100 }
+};
+
+const computerShopPackageSelect = $("computerShopPackage");
+const computerShopSaleForm = $("computerShopSaleForm");
+
+function selectedComputerShopPackage() {
+  return COMPUTER_SHOP_PACKAGES[computerShopPackageSelect.value] || COMPUTER_SHOP_PACKAGES["1 hour"];
+}
+
+function updateComputerShopSalePrice() {
+  const selectedPackage = selectedComputerShopPackage();
+  $("computerShopSalePrice").textContent = money(selectedPackage.price);
+}
+
+computerShopPackageSelect.addEventListener("change", updateComputerShopSalePrice);
+
+computerShopSaleForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+
+  if (!auth.currentUser) {
+    $("computerShopFormMessage").textContent = "Please sign in before recording a sale.";
+    return;
+  }
+
+  const pc = $("computerShopPc").value;
+  const packageLabel = computerShopPackageSelect.value;
+  const packageInfo = selectedComputerShopPackage();
+  const saveButton = $("saveComputerShopSale");
+
+  saveButton.disabled = true;
+  saveButton.textContent = "Saving sale...";
+  $("computerShopFormMessage").textContent = "";
+
+  try {
+    await addDoc(computerShopSalesRef, {
+      pc,
+      packageLabel,
+      durationMinutes: packageInfo.minutes,
+      price: packageInfo.price,
+      createdAt: serverTimestamp(),
+      createdAtLocal: new Date().toISOString(),
+      cashierUid: auth.currentUser.uid,
+      cashierEmail: auth.currentUser.email || ""
+    });
+
+    $("computerShopFormMessage").textContent = `Sale saved: ${pc}, ${packageLabel}, ${money(packageInfo.price)}.`;
+    $("computerShopFormMessage").classList.add("success");
+    await loadComputerShopReport();
+  } catch (error) {
+    console.error("Computer shop sale could not be saved:", error);
+    $("computerShopFormMessage").textContent = `Could not save sale: ${readableError(error)}`;
+    $("computerShopFormMessage").classList.remove("success");
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = "Save sale";
+  }
+});
+
+$("computerShopPeriod").addEventListener("change", loadComputerShopReport);
+$("refreshComputerShop").addEventListener("click", loadComputerShopReport);
+
+function getComputerShopSaleDate(sale) {
+  if (sale.createdAt?.toDate) return sale.createdAt.toDate();
+  if (sale.createdAtLocal) {
+    const parsed = new Date(sale.createdAtLocal);
+    return Number.isNaN(parsed.getTime()) ? null : parsed;
+  }
+  return null;
+}
+
+function computerShopPeriodStart(period, now) {
+  const start = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  if (period === "today") return start;
+  if (period === "week") {
+    const daysSinceMonday = (start.getDay() + 6) % 7;
+    start.setDate(start.getDate() - daysSinceMonday);
+    return start;
+  }
+  if (period === "month") return new Date(now.getFullYear(), now.getMonth(), 1);
+  return null;
+}
+
+async function loadComputerShopReport() {
+  if (!auth.currentUser) return;
+
+  const reportMessage = $("computerShopReportMessage");
+  const table = $("computerShopSalesTable");
+  reportMessage.textContent = "Loading computer shop sales...";
+
+  try {
+    const snapshot = await getDocs(computerShopSalesRef);
+    const now = new Date();
+    const period = $("computerShopPeriod").value;
+    const start = computerShopPeriodStart(period, now);
+
+    const sales = snapshot.docs.map((saleDoc) => ({ id: saleDoc.id, ...saleDoc.data() }))
+      .map((sale) => ({ ...sale, saleDate: getComputerShopSaleDate(sale) }))
+      .filter((sale) => sale.saleDate && (!start || sale.saleDate >= start) && sale.saleDate <= now)
+      .sort((a, b) => b.saleDate - a.saleDate);
+
+    const perPc = Array.from({ length: 6 }, (_, index) => ({
+      pc: `PC ${index + 1}`,
+      revenue: 0,
+      sessions: 0
+    }));
+    const pcStats = new Map(perPc.map((item) => [item.pc, item]));
+    let totalRevenue = 0;
+
+    sales.forEach((sale) => {
+      const price = Number(sale.price) || 0;
+      totalRevenue += price;
+      const stat = pcStats.get(sale.pc);
+      if (stat) {
+        stat.revenue += price;
+        stat.sessions += 1;
+      }
+    });
+
+    $("computerShopTotalRevenue").textContent = money(totalRevenue);
+    $("computerShopSessionCount").textContent = String(sales.length);
+
+    const rankedPcs = [...perPc].sort((a, b) => b.revenue - a.revenue || b.sessions - a.sessions);
+    const topPc = rankedPcs[0];
+    $("computerShopTopPc").textContent = topPc && topPc.revenue > 0 ? topPc.pc : "—";
+
+    const pcContainer = $("computerShopPcReport");
+    pcContainer.replaceChildren();
+    const maxRevenue = Math.max(0, ...perPc.map((item) => item.revenue));
+
+    perPc.forEach((stat) => {
+      const card = document.createElement("article");
+      card.className = "computer-shop-pc-card";
+      const heading = document.createElement("div");
+      heading.className = "computer-shop-pc-heading";
+      const name = document.createElement("strong");
+      name.textContent = stat.pc;
+      const amount = document.createElement("span");
+      amount.textContent = money(stat.revenue);
+      heading.append(name, amount);
+
+      const track = document.createElement("div");
+      track.className = "computer-shop-progress-track";
+      const bar = document.createElement("div");
+      bar.className = "computer-shop-progress-bar";
+      bar.style.width = `${maxRevenue > 0 ? (stat.revenue / maxRevenue) * 100 : 0}%`;
+      track.append(bar);
+
+      const sessions = document.createElement("small");
+      sessions.textContent = `${stat.sessions} session${stat.sessions === 1 ? "" : "s"}`;
+      card.append(heading, track, sessions);
+      pcContainer.append(card);
+    });
+
+    table.replaceChildren();
+    if (!sales.length) {
+      const row = document.createElement("tr");
+      const cell = document.createElement("td");
+      cell.colSpan = 4;
+      cell.textContent = "No computer shop sales recorded for this period.";
+      row.append(cell);
+      table.append(row);
+    } else {
+      sales.slice(0, 100).forEach((sale) => {
+        const row = document.createElement("tr");
+        const values = [
+          sale.saleDate.toLocaleString("en-PH", { dateStyle: "medium", timeStyle: "short" }),
+          sale.pc || "—",
+          sale.packageLabel || (sale.durationMinutes ? `${sale.durationMinutes} minutes` : "—"),
+          money(sale.price)
+        ];
+        values.forEach((value) => {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
+        });
+        table.append(row);
+      });
+    }
+
+    reportMessage.textContent = sales.length > 100
+      ? `Report loaded. Showing the latest 100 of ${sales.length} sales in this period.`
+      : `Report loaded: ${sales.length} sale(s) in this period.`;
+  } catch (error) {
+    console.error("Computer shop report failed:", error);
+    reportMessage.textContent = `Could not load computer shop report: ${readableError(error)}`;
+  }
+}
+
+// Keep the form's initial total in sync with the selected package.
+updateComputerShopSalePrice();
